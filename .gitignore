@@ -1,0 +1,15 @@
+# Environment variables & secrets (PENTING: Jangan upload token ke publik)
+.env
+.env.*
+
+# Python Cache & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.venv/
+venv/
+ENV/
+
+# Temporary caches
+*_cache.json
