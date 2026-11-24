@@ -127,11 +127,11 @@ def get_daily_macro_trend(symbol: str) -> str:
     else:
         return "Downtrend"
 
-def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = None) -> Dict[str, Any]:
+def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = None, timeframe: str = TIMEFRAME) -> Dict[str, Any]:
     """
     Menganalisis satu koin dengan multi-kondisi pasar kripto komprehensif:
     1. Tren Makro (EMA 200) & Retest (EMA 50)
-    2. Multi-Timeframe Confluence (MTF 1D + 4H)
+    2. Multi-Timeframe Confluence (MTF 1D + TF Pilihan)
     3. RSI Momentum & Extreme Overbought/Oversold Filter
     4. Leading Indicator: RSI Divergence (Bullish / Bearish)
     5. Volatilitas & Filter Sideways: ADX 14
@@ -143,7 +143,7 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
     11. Fase ATH/ATL & Proyeksi Matematika Fibonacci (1.618 & 2.618)
     """
     symbol = coin_meta["symbol"]
-    df = get_klines_data(symbol)
+    df = get_klines_data(symbol, interval=timeframe)
     if len(df) < 50:
         return None
 
@@ -405,12 +405,12 @@ def get_btc_macro_regime() -> Dict[str, Any]:
             "desc": f"Downtrend (<EMA200 di ${price:,.0f})"
         }
 
-def run_market_screener() -> Dict[str, Any]:
+def run_market_screener(timeframe: str = TIMEFRAME) -> Dict[str, Any]:
     """Menjalankan pemindaian seluruh koin teratas dan menghasilkan Top 5 Long & Short"""
     pairs = get_top_liquid_pairs()
     if not pairs:
         print("[Warning] Tidak ada koin yang berhasil ditarik.")
-        return {"longs": [], "shorts": [], "btc_status": {}, "total_scanned": 0}
+        return {"longs": [], "shorts": [], "btc_status": {}, "total_scanned": 0, "timeframe": timeframe}
 
     btc_status = get_btc_macro_regime()
     fear_greed = get_crypto_fear_and_greed()
@@ -418,7 +418,7 @@ def run_market_screener() -> Dict[str, Any]:
 
     results = []
     for p in pairs:
-        res = analyze_single_coin(p, btc_status=btc_status)
+        res = analyze_single_coin(p, btc_status=btc_status, timeframe=timeframe)
         if res:
             results.append(res)
 
@@ -431,6 +431,7 @@ def run_market_screener() -> Dict[str, Any]:
     top_shorts = top_shorts[:5]
 
     return {
+        "timeframe": timeframe,
         "btc_status": btc_status,
         "fear_greed": fear_greed,
         "macro_intel": macro_intel,

@@ -17,8 +17,12 @@ def format_telegram_message(data: dict) -> str:
     fg = data.get("fear_greed", {})
     macro = data.get("macro_intel", {})
 
+    tf = data.get("timeframe", "4h")
+    tf_label = "15 Menit (Intraday Cepat)" if tf == "15m" else ("1 Jam (Intraday)" if tf == "1h" else "4 Jam (Swing)")
+
     msg = f"📊 *[RADAR PASAR CRYPTO & SETUP EKSEKUSI CERDAS]*\n"
     msg += f"🕒 Waktu: {now}\n"
+    msg += f"⏱️ Timeframe Analisis: *{tf}* ({tf_label})\n"
     if btc:
         msg += f"🌐 Rezim BTC: *{btc.get('desc', 'N/A')}*\n"
     if fg:
@@ -184,13 +188,31 @@ def print_terminal_report(data: dict):
 
 def send_telegram_alert(message: str) -> bool:
     """Mengirim pesan teks ke bot Telegram jika kredensial diatur"""
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not TELEGRAM_BOT_TOKEN:
+        print("[!] TELEGRAM_BOT_TOKEN kosong atau belum diatur di Secrets/Environment.")
         return False
+    if not TELEGRAM_CHAT_ID:
+        print("[!] TELEGRAM_CHAT_ID kosong atau belum diatur di Secrets/Environment.")
+        return False
+
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
         r = requests.post(url, json=payload, timeout=8)
-        return r.status_code == 200
+        if r.status_code == 200:
+            return True
+        else:
+            print(f"[!] Telegram API Error ({r.status_code}): {r.text}")
+            # Fallback jika ada karakter khusus markdown yang gagal di-parse oleh Telegram
+            if "can't parse entities" in r.text:
+                print("[i] Mencoba kirim ulang pesan dalam mode teks polos...")
+                payload_plain = {
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "text": message.replace("*", "").replace("_", "").replace("`", "")
+                }
+                r_retry = requests.post(url, json=payload_plain, timeout=8)
+                return r_retry.status_code == 200
+            return False
     except Exception as e:
         print(f"[Warning] Gagal kirim Telegram: {e}")
         return False

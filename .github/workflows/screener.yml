@@ -9,6 +9,16 @@ on:
 
   # 2. Bisa dijalankan manual kapan saja lewat tombol "Run workflow" di GitHub
   workflow_dispatch:
+    inputs:
+      timeframe:
+        description: 'Pilih Timeframe Analisis'
+        required: true
+        default: '4h'
+        type: choice
+        options:
+          - '15m'
+          - '1h'
+          - '4h'
 
 jobs:
   run-screener:
@@ -36,7 +46,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python main.py --telegram
+          python main.py --telegram --timeframe ${{ github.event.inputs.timeframe || '4h' }}
 
       - name: Simpan & Commit Riwayat Sinyal
         run: |
