@@ -89,7 +89,59 @@ export default {
 
         const text = update.message.text.trim().toLowerCase();
 
-        if (text === "/menu" || text === "/start" || text === "menu") {
+        // A. Perintah Cek 1 Koin Spesifik: /cek <koin> [timeframe]
+        if (text.startsWith("/cek") || text.startsWith("/analisa") || text.startsWith("/check")) {
+          const parts = update.message.text.trim().split(/\s+/);
+          if (parts.length > 1) {
+            let targetSym = parts[1].toUpperCase();
+            if (targetSym.endsWith("USDT")) {
+              targetSym = targetSym.replace("USDT", "");
+            }
+            const targetTf = (parts.length > 2 && ["15m", "1h", "4h"].includes(parts[2].toLowerCase())) ? parts[2].toLowerCase() : "15m";
+
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: `🔍 *Memulai Analisis ${targetSym}USDT (Timeframe ${targetTf})...*\nLaporan lengkap akan langsung dikirim ke sini sebentar lagi.`,
+                parse_mode: "Markdown"
+              })
+            });
+
+            await fetch(`https://api.github.com/repos/${githubRepo}/actions/workflows/screener.yml/dispatches`, {
+              method: "POST",
+              headers: {
+                "Authorization": `Bearer ${githubToken}`,
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "Cloudflare-Worker-Crypto-Bot"
+              },
+              body: JSON.stringify({
+                ref: "main",
+                inputs: {
+                  timeframe: targetTf,
+                  symbol: targetSym
+                }
+              })
+            });
+
+            return new Response("OK", { status: 200 });
+          } else {
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: "💡 *Format salah!*\nGunakan: `/cek <koin> [timeframe]`\nContoh: `/cek DOS 15m` atau `/cek BTC 1h`",
+                parse_mode: "Markdown"
+              })
+            });
+            return new Response("OK", { status: 200 });
+          }
+        }
+
+        // B. Perintah Menu / Start
+        if (text === "/menu" || text === "/start" || text === "menu" || text === "/help") {
           await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -101,7 +153,9 @@ export default {
                 "• *15 Menit (15m)*: Trading kilat selesai 1–3 jam\n" +
                 "• *1 Jam (1h)*: Intraday selesai 3–8 jam\n" +
                 "• *4 Jam (4h)*: Swing tenang selesai 1–2 hari\n\n" +
-                "👇 *Klik salah satu tombol di bawah untuk scan:* "
+                "💡 *Cek 1 Koin Tertentu:*\n" +
+                "Ketik: `/cek <koin> [timeframe]` (Contoh: `/cek DOS 15m`)\n\n" +
+                "👇 *Atau klik salah satu tombol di bawah untuk scan seluruh pasar:* "
               ),
               parse_mode: "Markdown",
               reply_markup: {
