@@ -34,14 +34,15 @@ def format_telegram_message(data: dict) -> str:
     if longs:
         for i, c in enumerate(longs, 1):
             fvg_note = f" [{c['fvg_status']}]" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
-            reasons_str = " + ".join(c['reasons'][:2])
+            reasons_list = c.get('reasons', [])
+            reasons_str = " + ".join(reasons_list[:2]) if reasons_list else "Momentum Bullish"
             msg += (
-                f"\n*{i}. {c['symbol']}* (Skor: `+{c['score']}` | 1D: `{c.get('daily_trend')}`){fvg_note}\n"
+                f"\n*{i}. {c.get('symbol', 'PAIR')}* (Skor: `+{c.get('score', 0)}` | 1D: `{c.get('daily_trend', 'Neutral')}`){fvg_note}\n"
                 f"• Sinyal: _{reasons_str}_\n"
-                f"• Entry: `${c['entry_market']}` | Trig: `${c['trigger_entry']}` | Retest: `${c['retest_entry']}`\n"
-                f"• SL: `${c['sl']}` (-{c['risk_pct']}%) | TP1: `${c['tp1']}` | TP2: `${c['tp2']}`\n"
-                f"• 🛡️ *Lev Aman:* `{c.get('recommended_leverage', '3x-5x')}` (Maks: `{c.get('max_safe_leverage')}`) | *Liq:* `< ${c.get('safe_liq_price')}`\n"
-                f"• 🐋 *Paus:* Dump `${c.get('whale_dump')}` (-{c.get('whale_drop_pct')}%) | Pump `${c.get('whale_pump')}` (+{c.get('whale_pump_pct')}%)\n"
+                f"• Entry: `${c.get('entry_market', '0.0')}` | Trig: `${c.get('trigger_entry', '0.0')}` | Retest: `${c.get('retest_entry', '0.0')}`\n"
+                f"• SL: `${c.get('sl', '0.0')}` (-{c.get('risk_pct', 0)}%) | TP1: `${c.get('tp1', '0.0')}` | TP2: `${c.get('tp2', '0.0')}`\n"
+                f"• 🛡️ *Lev Aman:* `{c.get('recommended_leverage', '3x-5x')}` (Maks: `{c.get('max_safe_leverage', '5x')}`) | *Liq:* {c.get('safe_liq_price', '-')}\n"
+                f"• 🐋 *Paus:* Dump `${c.get('whale_dump', '0.0')}` (-{c.get('whale_drop_pct', 0)}%) | Pump `${c.get('whale_pump', '0.0')}` (+{c.get('whale_pump_pct', 0)}%)\n"
             )
     else:
         msg += "   _Tidak ada koin Long yang memenuhi filter saat ini._\n"
@@ -53,14 +54,15 @@ def format_telegram_message(data: dict) -> str:
     if shorts:
         for i, c in enumerate(shorts, 1):
             fvg_note = f" [{c['fvg_status']}]" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
-            reasons_str = " + ".join(c['reasons'][:2])
+            reasons_list = c.get('reasons', [])
+            reasons_str = " + ".join(reasons_list[:2]) if reasons_list else "Momentum Bearish"
             msg += (
-                f"\n*{i}. {c['symbol']}* (Skor: `{c['score']}` | 1D: `{c.get('daily_trend')}`){fvg_note}\n"
+                f"\n*{i}. {c.get('symbol', 'PAIR')}* (Skor: `{c.get('score', 0)}` | 1D: `{c.get('daily_trend', 'Neutral')}`){fvg_note}\n"
                 f"• Sinyal: _{reasons_str}_\n"
-                f"• Entry: `${c['entry_market']}` | Trig: `${c['trigger_entry']}` | Retest: `${c['retest_entry']}`\n"
-                f"• SL: `${c['sl']}` (+{c['risk_pct']}%) | TP1: `${c['tp1']}` | TP2: `${c['tp2']}`\n"
-                f"• 🛡️ *Lev Aman:* `{c.get('recommended_leverage', '3x-5x')}` (Maks: `{c.get('max_safe_leverage')}`) | *Liq:* `> ${c.get('safe_liq_price')}`\n"
-                f"• 🐋 *Paus:* Dump `${c.get('whale_dump')}` (-{c.get('whale_drop_pct')}%) | Pump `${c.get('whale_pump')}` (+{c.get('whale_pump_pct')}%)\n"
+                f"• Entry: `${c.get('entry_market', '0.0')}` | Trig: `${c.get('trigger_entry', '0.0')}` | Retest: `${c.get('retest_entry', '0.0')}`\n"
+                f"• SL: `${c.get('sl', '0.0')}` (+{c.get('risk_pct', 0)}%) | TP1: `${c.get('tp1', '0.0')}` | TP2: `${c.get('tp2', '0.0')}`\n"
+                f"• 🛡️ *Lev Aman:* `{c.get('recommended_leverage', '3x-5x')}` (Maks: `{c.get('max_safe_leverage', '5x')}`) | *Liq:* {c.get('safe_liq_price', '-')}\n"
+                f"• 🐋 *Paus:* Dump `${c.get('whale_dump', '0.0')}` (-{c.get('whale_drop_pct', 0)}%) | Pump `${c.get('whale_pump', '0.0')}` (+{c.get('whale_pump_pct', 0)}%)\n"
             )
     else:
         msg += "   _Tidak ada koin Short yang memenuhi filter saat ini._\n"

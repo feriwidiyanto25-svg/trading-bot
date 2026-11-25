@@ -205,12 +205,13 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
 
     # B. Multi-Timeframe Confluence (MTF 1D)
     daily_trend = get_daily_macro_trend(symbol)
+    tf_str = timeframe.upper()
     if close_p > ema200_p and daily_trend == "Uptrend":
         score += 25
-        reasons.append("🏆 MTF Selaras (1D & 4H Uptrend)")
+        reasons.append(f"🏆 MTF Selaras (1D & {tf_str} Uptrend)")
     elif close_p < ema200_p and daily_trend == "Downtrend":
         score -= 25
-        reasons.append("🏆 MTF Selaras (1D & 4H Downtrend)")
+        reasons.append(f"🏆 MTF Selaras (1D & {tf_str} Downtrend)")
     elif close_p > ema200_p and daily_trend == "Downtrend":
         score -= 20
         reasons.append("⚠️ MTF Konflik (1D Downtrend)")
@@ -312,20 +313,12 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
 
     # N. Faktor Funding Rate Futures (Squeeze Risk Detection)
     if fr_eval["status"] != "NEUTRAL":
-        if score > 0: # Sinyal Long
-            if fr_eval["bias"] == "SHORT_BIAS":
-                score -= 20
-                reasons.append(fr_eval["label"])
-            elif fr_eval["bias"] == "LONG_BIAS":
-                score += 20
-                reasons.append(fr_eval["label"])
-        elif score < 0: # Sinyal Short
-            if fr_eval["bias"] == "SHORT_BIAS":
-                score -= 20
-                reasons.append(fr_eval["label"])
-            elif fr_eval["bias"] == "LONG_BIAS":
-                score += 20
-                reasons.append(fr_eval["label"])
+        if fr_eval["bias"] == "SHORT_BIAS":
+            score -= 20
+            reasons.append(fr_eval["label"])
+        elif fr_eval["bias"] == "LONG_BIAS":
+            score += 20
+            reasons.append(fr_eval["label"])
 
     # 3. Hitung Setup Eksekusi Cerdas
     # Gunakan harga LIVE real-time saat ini dari ticker (bukan harga candle tutup sebelumnya)
@@ -346,6 +339,12 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         else:
             tp1 = entry_market + (risk_distance * RRR_TP1)
             tp2 = entry_market + (risk_distance * RRR_TP2)
+
+        # Proteksi Arah TP Long: Wajib di atas harga Entry dan TP2 > TP1
+        if tp1 <= entry_market or tp2 <= tp1:
+            tp1 = entry_market + (risk_distance * RRR_TP1)
+            tp2 = entry_market + (risk_distance * RRR_TP2)
+            tp_model = "RRR Standard (1:1.5 & 1:2.5)"
 
         # Trigger Breakout (Buy Stop): Tembus pucuk (High), wajib di atas harga pasar saat ini
         trigger_entry = max(c['high'], entry_market * 1.002)
@@ -370,6 +369,12 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         else:
             tp1 = entry_market - (risk_distance * RRR_TP1)
             tp2 = entry_market - (risk_distance * RRR_TP2)
+
+        # Proteksi Arah TP Short: Wajib di bawah harga Entry dan TP2 < TP1
+        if tp1 >= entry_market or tp2 >= tp1:
+            tp1 = entry_market - (risk_distance * RRR_TP1)
+            tp2 = entry_market - (risk_distance * RRR_TP2)
+            tp_model = "RRR Standard (1:1.5 & 1:2.5)"
 
         # Trigger Breakdown (Sell Stop): Jebol dasar (Low), wajib di bawah harga pasar saat ini
         trigger_entry = min(c['low'], entry_market * 0.998)
