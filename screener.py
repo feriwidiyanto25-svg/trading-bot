@@ -513,3 +513,51 @@ def run_market_screener(timeframe: str = TIMEFRAME) -> Dict[str, Any]:
         "shorts": top_shorts,
         "total_scanned": len(results)
     }
+
+def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME) -> Dict[str, Any]:
+    """
+    Menganalisis satu koin spesifik secara langsung (On-Demand Single Coin Analysis).
+    Mendukung input seperti 'DOGS', 'DOGSUSDT', 'BTC', 'ETH', dll.
+    """
+    clean_sym = symbol.upper().strip()
+    if not clean_sym.endswith(QUOTE_ASSET):
+        clean_sym += QUOTE_ASSET
+
+    url = f"{BINANCE_BASE_URL}/ticker/24hr"
+    try:
+        res = requests.get(url, params={"symbol": clean_sym}, timeout=5)
+        res.raise_for_status()
+        t = res.json()
+    except Exception as e:
+        print(f"[Error] Gagal mengambil ticker untuk {clean_sym}: {e}")
+        return {}
+
+    coin_meta = {
+        "symbol": clean_sym,
+        "quote_volume": float(t.get("quoteVolume", 0)),
+        "price_change_pct": float(t.get("priceChangePercent", 0)),
+        "last_price": float(t.get("lastPrice", 0)),
+        "bid_qty": float(t.get("bidQty", 0)),
+        "ask_qty": float(t.get("askQty", 0))
+    }
+
+    btc_status = get_btc_macro_regime()
+    fear_greed = get_crypto_fear_and_greed()
+    macro_intel = get_fed_and_macro_intel()
+    funding_map = get_all_funding_rates()
+
+    analysis = analyze_single_coin(coin_meta, btc_status=btc_status, timeframe=timeframe, funding_map=funding_map)
+    if not analysis:
+        # Jika score netral (0), buat data minimum
+        return {}
+
+    return {
+        "timeframe": timeframe,
+        "btc_status": btc_status,
+        "fear_greed": fear_greed,
+        "macro_intel": macro_intel,
+        "longs": [analysis] if analysis["direction"] == "LONG" else [],
+        "shorts": [analysis] if analysis["direction"] == "SHORT" else [],
+        "total_scanned": 1,
+        "single_coin": analysis
+    }

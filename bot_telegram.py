@@ -7,7 +7,7 @@ import os
 import time
 import requests
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
-from screener import run_market_screener
+from screener import run_market_screener, analyze_specific_coin
 from reporter import format_telegram_message, send_telegram_alert
 
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
@@ -19,11 +19,14 @@ def send_menu(chat_id: str):
         "chat_id": chat_id,
         "text": (
             "🤖 *[RADAR CRYPTO & INTELIJEN PAUS INTERAKTIF]*\n\n"
-            "Silakan pilih *Timeframe* pemindaian di bawah ini:\n"
+            "Silakan pilih *Timeframe* pemindaian pasar:\n"
             "• *15 Menit (15m)*: Trading kilat selesai dalam 1–3 jam.\n"
             "• *1 Jam (1h)*: Intraday selesai dalam 3–8 jam.\n"
             "• *4 Jam (4h)*: Swing tenang selesai dalam 1–2 hari.\n\n"
-            "👇 *Klik tombol untuk memulai pemindaian:* "
+            "💡 *Ingin Cek 1 Koin Spesifik?*\n"
+            "Ketik langsung: `/cek <koin> [timeframe]`\n"
+            "Contoh: `/cek DOGS 15m` atau `/cek BTC 1h`\n\n"
+            "👇 *Atau klik tombol untuk scan seluruh pasar:* "
         ),
         "parse_mode": "Markdown",
         "reply_markup": {
@@ -73,6 +76,26 @@ def process_scan_request(chat_id: str, timeframe: str):
         print(f"[+] Hasil scan {timeframe} berhasil dikirim ke Telegram!")
     else:
         send_chat_message(chat_id, "❌ Gagal mengirim hasil scan. Silakan coba lagi.")
+
+def process_single_coin_request(chat_id: str, symbol: str, timeframe: str = "15m"):
+    """Menjalankan analisis instan pada satu koin khusus"""
+    sym = symbol.upper().strip()
+    if not sym.endswith("USDT"):
+        sym += "USDT"
+
+    send_chat_message(chat_id, f"🔍 *Menganalisis koin {sym} (Timeframe {timeframe})...*\n_Mohon tunggu sebentar..._")
+    print(f"\n[+] Permintaan analisis khusus {sym} (TF: {timeframe}) diterima...")
+    data = analyze_specific_coin(symbol=sym, timeframe=timeframe)
+    if not data or not (data.get("longs") or data.get("shorts")):
+        send_chat_message(chat_id, f"⚠️ *Koin '{sym}' tidak ditemukan di Binance Vision atau skor saat ini netral.*")
+        return
+
+    msg = format_telegram_message(data)
+    success = send_telegram_alert(msg)
+    if success:
+        print(f"[+] Hasil analisis khusus {sym} berhasil dikirim ke Telegram!")
+    else:
+        send_chat_message(chat_id, "❌ Gagal mengirim hasil analisis koin.")
 
 def run_bot_listener():
     """Mendengarkan pesan Telegram secara interaktif (Long Polling)"""
@@ -140,6 +163,14 @@ def run_bot_listener():
                         parts = text.split()
                         tf = parts[1] if len(parts) > 1 and parts[1] in ["15m", "1h", "4h"] else "4h"
                         process_scan_request(from_id, tf)
+                    elif text.startswith("/cek") or text.startswith("/analisa") or text.startswith("/check"):
+                        parts = text.split()
+                        if len(parts) > 1:
+                            target_sym = parts[1]
+                            target_tf = parts[2] if len(parts) > 2 and parts[2] in ["15m", "1h", "4h"] else "15m"
+                            process_single_coin_request(from_id, target_sym, target_tf)
+                        else:
+                            send_chat_message(from_id, "💡 *Format salah!*\nGunakan: `/cek <koin> [timeframe]`\nContoh: `/cek DOGS 15m` atau `/cek BTC 1h`")
                     else:
                         send_menu(from_id)
 
