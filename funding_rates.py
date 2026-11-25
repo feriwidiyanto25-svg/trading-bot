@@ -9,6 +9,72 @@ import requests
 from typing import Dict, Any
 
 CACHE_FILE = os.path.join(os.path.dirname(__file__), "funding_cache.json")
+FUTURES_SYMBOLS_CACHE = os.path.join(os.path.dirname(__file__), "futures_symbols_cache.json")
+
+def get_binance_futures_symbols() -> set:
+    """
+    Mengambil daftar seluruh simbol kontrak USDT-M yang aktif di Binance Futures.
+    Menyaring koin spot-only (seperti fan token ATM, BAR, CITY) agar hasil analisis
+    100% valid dan bisa langsung ditradingkan di Binance Futures.
+    """
+    # 1. Cek Cache lokal (< 24 jam)
+    if os.path.exists(FUTURES_SYMBOLS_CACHE):
+        try:
+            mtime = os.path.getmtime(FUTURES_SYMBOLS_CACHE)
+            if time.time() - mtime < 86400:
+                with open(FUTURES_SYMBOLS_CACHE, "r") as f:
+                    cached = json.load(f)
+                    if cached and isinstance(cached, list):
+                        return set(cached)
+        except Exception:
+            pass
+
+    symbols = set()
+
+    # 2. Coba direct Binance Futures API (berjalan di GitHub Actions)
+    try:
+        url = "https://fapi.binance.com/fapi/v1/exchangeInfo"
+        res = requests.get(url, timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            for s in data.get("symbols", []):
+                if s.get("status") == "TRADING" and s.get("contractType") == "PERPETUAL" and s.get("quoteAsset") == "USDT":
+                    symbols.add(s["symbol"])
+    except Exception:
+        pass
+
+    # 3. Fallback jika Binance FAPI diblokir ISP lokal: CoinGecko Binance Futures
+    if not symbols:
+        try:
+            url = "https://api.coingecko.com/api/v3/derivatives/exchanges/binance_futures?include_tickers=all"
+            res = requests.get(url, timeout=8)
+            if res.status_code == 200:
+                tickers = res.json().get("tickers", [])
+                for t in tickers:
+                    sym = t.get("symbol", "")
+                    if sym.endswith("USDT") or t.get("target") == "USDT":
+                        symbols.add(sym)
+        except Exception:
+            pass
+
+    # Simpan ke cache jika berhasil
+    if symbols:
+        try:
+            with open(FUTURES_SYMBOLS_CACHE, "w") as f:
+                json.dump(list(symbols), f)
+        except Exception:
+            pass
+        return symbols
+
+    # Fallback jika offline
+    if os.path.exists(FUTURES_SYMBOLS_CACHE):
+        try:
+            with open(FUTURES_SYMBOLS_CACHE, "r") as f:
+                return set(json.load(f))
+        except Exception:
+            pass
+
+    return set()
 
 def get_all_funding_rates() -> Dict[str, float]:
     """

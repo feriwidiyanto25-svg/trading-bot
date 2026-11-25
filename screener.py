@@ -39,7 +39,8 @@ from macro_news import (
 )
 from funding_rates import (
     get_all_funding_rates,
-    evaluate_funding_rate
+    evaluate_funding_rate,
+    get_binance_futures_symbols
 )
 
 def get_top_liquid_pairs() -> List[Dict[str, Any]]:
@@ -62,11 +63,18 @@ def get_top_liquid_pairs() -> List[Dict[str, Any]]:
         "UUSDT", "USDUSDT", "AEURUSDT", "USDPUSDT", "WBTCUSDT", "USD1USDT"
     }
 
+    # Ambil daftar koin Binance Futures agar hanya menyaring koin yang ada di Futures
+    futures_symbols = get_binance_futures_symbols()
+
     for t in tickers:
         symbol = t.get("symbol", "")
         if not symbol.endswith(QUOTE_ASSET) or symbol in excluded_coins:
             continue
         if symbol.endswith("USDUSDT") or symbol.endswith("BUSDT"):
+            continue
+        
+        # Saring koin spot-only (misal Fan Token ATMUSDT tidak ada di futures)
+        if futures_symbols and symbol not in futures_symbols:
             continue
             
         try:
