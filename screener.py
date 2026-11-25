@@ -107,24 +107,57 @@ def get_top_liquid_pairs() -> List[Dict[str, Any]]:
     return list(combined.values())
 
 def get_klines_data(symbol: str, interval: str = TIMEFRAME, limit: int = CANDLE_LIMIT) -> pd.DataFrame:
-    """Mengambil data OHLCV historis dari Binance"""
-    url = f"{BINANCE_BASE_URL}/klines"
+    """Mengambil data OHLCV historis dari Binance (Spot / Futures) dengan fallback multi-source"""
     params = {"symbol": symbol, "interval": interval, "limit": limit}
+    
+    # 1. Coba Binance Vision (Spot)
     try:
-        res = requests.get(url, params=params, timeout=5)
-        res.raise_for_status()
-        raw = res.json()
+        url = f"{BINANCE_BASE_URL}/klines"
+        res = requests.get(url, params=params, timeout=4)
+        if res.status_code == 200:
+            raw = res.json()
+            if raw and isinstance(raw, list):
+                df = pd.DataFrame(raw).iloc[:, [0, 1, 2, 3, 4, 5]]
+                df.columns = ["time", "open", "high", "low", "close", "volume"]
+                for col in ["open", "high", "low", "close", "volume"]:
+                    df[col] = df[col].astype(float)
+                return df
     except Exception:
-        return pd.DataFrame()
+        pass
 
-    if not raw or not isinstance(raw, list):
-        return pd.DataFrame()
+    # 2. Coba Binance Futures FAPI (Direct di GitHub Actions / non-ID IP)
+    try:
+        fapi_url = "https://fapi.binance.com/fapi/v1/klines"
+        res = requests.get(fapi_url, params=params, timeout=3)
+        if res.status_code == 200:
+            raw = res.json()
+            if raw and isinstance(raw, list):
+                df = pd.DataFrame(raw).iloc[:, [0, 1, 2, 3, 4, 5]]
+                df.columns = ["time", "open", "high", "low", "close", "volume"]
+                for col in ["open", "high", "low", "close", "volume"]:
+                    df[col] = df[col].astype(float)
+                return df
+    except Exception:
+        pass
 
-    df = pd.DataFrame(raw).iloc[:, [0, 1, 2, 3, 4, 5]]
-    df.columns = ["time", "open", "high", "low", "close", "volume"]
-    for col in ["open", "high", "low", "close", "volume"]:
-        df[col] = df[col].astype(float)
-    return df
+    # 3. Fallback jika koin Futures-Only dan diakses dari IP lokal (misal DOS_USDT via Gate.io)
+    try:
+        gate_sym = symbol.replace("USDT", "_USDT")
+        gate_url = f"https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair={gate_sym}&interval={interval}&limit={limit}"
+        res = requests.get(gate_url, timeout=5)
+        if res.status_code == 200:
+            raw = res.json()
+            if raw and isinstance(raw, list) and len(raw) > 0 and isinstance(raw[0], list):
+                # Gate format: [time, volume, close, high, low, open]
+                df = pd.DataFrame(raw).iloc[:, [0, 5, 3, 4, 2, 1]]
+                df.columns = ["time", "open", "high", "low", "close", "volume"]
+                for col in ["open", "high", "low", "close", "volume"]:
+                    df[col] = df[col].astype(float)
+                return df
+    except Exception:
+        pass
+
+    return pd.DataFrame()
 
 def get_daily_macro_trend(symbol: str) -> str:
     """
@@ -517,19 +550,58 @@ def run_market_screener(timeframe: str = TIMEFRAME) -> Dict[str, Any]:
 def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME) -> Dict[str, Any]:
     """
     Menganalisis satu koin spesifik secara langsung (On-Demand Single Coin Analysis).
-    Mendukung input seperti 'DOGS', 'DOGSUSDT', 'BTC', 'ETH', dll.
+    Mendukung input seperti 'DOS', 'DOGS', 'BTC', 'ETH' baik di Spot maupun Futures.
     """
     clean_sym = symbol.upper().strip()
     if not clean_sym.endswith(QUOTE_ASSET):
         clean_sym += QUOTE_ASSET
 
-    url = f"{BINANCE_BASE_URL}/ticker/24hr"
+    t = None
+    # 1. Coba Binance Vision (Spot)
     try:
-        res = requests.get(url, params={"symbol": clean_sym}, timeout=5)
-        res.raise_for_status()
-        t = res.json()
-    except Exception as e:
-        print(f"[Error] Gagal mengambil ticker untuk {clean_sym}: {e}")
+        url = f"{BINANCE_BASE_URL}/ticker/24hr"
+        res = requests.get(url, params={"symbol": clean_sym}, timeout=4)
+        if res.status_code == 200:
+            data_raw = res.json()
+            if isinstance(data_raw, dict) and "lastPrice" in data_raw:
+                t = data_raw
+    except Exception:
+        pass
+
+    # 2. Coba Binance Futures FAPI (Berjalan di GitHub Actions / non-ID IP)
+    if not t:
+        try:
+            furl = "https://fapi.binance.com/fapi/v1/ticker/24hr"
+            res = requests.get(furl, params={"symbol": clean_sym}, timeout=3)
+            if res.status_code == 200:
+                data_raw = res.json()
+                if isinstance(data_raw, dict) and "lastPrice" in data_raw:
+                    t = data_raw
+        except Exception:
+            pass
+
+    # 3. Fallback jika koin Futures-Only dan diakses dari IP lokal (misal DOS_USDT via Gate.io)
+    if not t:
+        try:
+            gate_sym = clean_sym.replace("USDT", "_USDT")
+            gurl = f"https://api.gateio.ws/api/v4/spot/tickers?currency_pair={gate_sym}"
+            res = requests.get(gurl, timeout=5)
+            if res.status_code == 200:
+                gdata = res.json()
+                if gdata and isinstance(gdata, list):
+                    item = gdata[0]
+                    t = {
+                        "quoteVolume": float(item.get("quote_volume", 0)),
+                        "priceChangePercent": float(item.get("change_percentage", 0)),
+                        "lastPrice": float(item.get("last", 0)),
+                        "bidQty": float(item.get("highest_size", 0)),
+                        "askQty": float(item.get("lowest_size", 0))
+                    }
+        except Exception:
+            pass
+
+    if not t or "lastPrice" not in t or float(t.get("lastPrice", 0)) <= 0:
+        print(f"[Error] Gagal mengambil ticker untuk {clean_sym}")
         return {}
 
     coin_meta = {
