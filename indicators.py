@@ -328,3 +328,78 @@ def detect_rsi_divergence(df: pd.DataFrame, lookback: int = 20) -> dict:
         }
 
     return {"type": "None", "label": "", "score_impact": 0}
+
+def detect_fair_value_gap(df: pd.DataFrame, lookback: int = 15) -> dict:
+    """
+    Mendeteksi Fair Value Gap (FVG / Imbalance - Smart Money Concepts):
+    - Bullish FVG: Terjadi gap antara Low Candle[i+1] dan High Candle[i-1] pada impuls naik.
+      Titik tengah FVG adalah level Diskon Emas untuk antrean Limit Buy (Retest).
+    - Bearish FVG: Terjadi gap antara High Candle[i+1] dan Low Candle[i-1] pada impuls turun.
+      Titik tengah FVG adalah level Pantulan Emas untuk antrean Limit Sell (Retest).
+    """
+    if len(df) < lookback + 5:
+        return {"has_fvg": False, "type": "None", "fvg_price": None, "score_impact": 0, "label": ""}
+
+    curr_p = df.iloc[-2]['close']
+    bullish_fvgs = []
+    bearish_fvgs = []
+
+    for i in range(len(df) - lookback - 2, len(df) - 2):
+        c1 = df.iloc[i - 1]
+        c2 = df.iloc[i]
+        c3 = df.iloc[i + 1]
+
+        # Bullish FVG: C3 Low > C1 High
+        if c3['low'] > c1['high'] and (c3['low'] - c1['high']) > (c2['close'] * 0.001):
+            gap_top = c3['low']
+            gap_bottom = c1['high']
+            mid_val = (gap_top + gap_bottom) / 2
+            if curr_p >= gap_bottom:
+                bullish_fvgs.append({
+                    "fvg_top": gap_top,
+                    "fvg_bottom": gap_bottom,
+                    "mid_fvg": mid_val
+                })
+
+        # Bearish FVG: C1 Low > C3 High
+        if c1['low'] > c3['high'] and (c1['low'] - c3['high']) > (c2['close'] * 0.001):
+            gap_top = c1['low']
+            gap_bottom = c3['high']
+            mid_val = (gap_top + gap_bottom) / 2
+            if curr_p <= gap_top:
+                bearish_fvgs.append({
+                    "fvg_top": gap_top,
+                    "fvg_bottom": gap_bottom,
+                    "mid_fvg": mid_val
+                })
+
+    if bullish_fvgs:
+        valid = [f for f in bullish_fvgs if f["mid_fvg"] < curr_p]
+        if valid:
+            nearest = max(valid, key=lambda x: x["mid_fvg"])
+            return {
+                "has_fvg": True,
+                "type": "BULLISH_FVG",
+                "fvg_price": nearest["mid_fvg"],
+                "fvg_top": nearest["fvg_top"],
+                "fvg_bottom": nearest["fvg_bottom"],
+                "score_impact": 15,
+                "label": f"💎 FVG Imbalance Diskon (${nearest['mid_fvg']:.4f})"
+            }
+
+    if bearish_fvgs:
+        valid = [f for f in bearish_fvgs if f["mid_fvg"] > curr_p]
+        if valid:
+            nearest = min(valid, key=lambda x: x["mid_fvg"])
+            return {
+                "has_fvg": True,
+                "type": "BEARISH_FVG",
+                "fvg_price": nearest["mid_fvg"],
+                "fvg_top": nearest["fvg_top"],
+                "fvg_bottom": nearest["fvg_bottom"],
+                "score_impact": -15,
+                "label": f"💎 FVG Imbalance Pantulan (${nearest['mid_fvg']:.4f})"
+            }
+
+    return {"has_fvg": False, "type": "None", "fvg_price": None, "score_impact": 0, "label": ""}
+

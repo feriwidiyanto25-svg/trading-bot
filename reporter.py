@@ -50,15 +50,19 @@ def format_telegram_message(data: dict) -> str:
         for i, c in enumerate(longs, 1):
             reasons_str = " + ".join(c['reasons'][:3])
             tp_info = c.get('tp_model', 'RRR Standard')
+            fvg_note = f"\n   • {c['fvg_status']}" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
             msg += (
                 f"{i}. 🚀 *{c['symbol']}* (Skor: `+{c['score']}` | 1D: `{c.get('daily_trend')}`)\n"
-                f"   • Sinyal: _{reasons_str}_\n"
+                f"   • Sinyal: _{reasons_str}_{fvg_note}\n"
                 f"   • Market Entry: `${c['entry_market']}`\n"
                 f"   • ⚡ Trigger Konfirmasi: `${c['trigger_entry']}` (Tembus Pucuk)\n"
                 f"   • 🎯 Retest Diskon: `${c['retest_entry']}`\n"
                 f"   • Stop Loss: `${c['sl']}` (-{c['risk_pct']}%)\n"
                 f"   • Target TP 1: `${c['tp1']}` ({tp_info})\n"
                 f"   • Target TP 2: `${c['tp2']}`\n"
+                f"   • 🛡️ *Anti-Likuidasi:* Rekomendasi Lev *{c.get('recommended_leverage', '3x-5x')}* (Maks: `{c.get('max_safe_leverage')}`) | Batas Liq: `{c.get('safe_liq_price')}`\n"
+                f"   • 💰 *Alokasi Modal:* Maks. 20%–30% saldo (sisa 70% penahan liq)\n"
+                f"   • ⚡ *Funding Rate:* `{c.get('funding_rate', 0.01)}%`\n"
                 f"   • 🐋 *Level Paus:* Dump `${c.get('whale_dump')}` (-{c.get('whale_drop_pct')}%) | Pump `${c.get('whale_pump')}` (+{c.get('whale_pump_pct')}%)\n\n"
             )
     else:
@@ -72,15 +76,19 @@ def format_telegram_message(data: dict) -> str:
         for i, c in enumerate(shorts, 1):
             reasons_str = " + ".join(c['reasons'][:3])
             tp_info = c.get('tp_model', 'RRR Standard')
+            fvg_note = f"\n   • {c['fvg_status']}" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
             msg += (
                 f"{i}. 🔻 *{c['symbol']}* (Skor: `{c['score']}` | 1D: `{c.get('daily_trend')}`)\n"
-                f"   • Sinyal: _{reasons_str}_\n"
+                f"   • Sinyal: _{reasons_str}_{fvg_note}\n"
                 f"   • Market Entry: `${c['entry_market']}`\n"
                 f"   • ⚡ Trigger Konfirmasi: `${c['trigger_entry']}` (Jebol Dasar)\n"
                 f"   • 🎯 Retest Diskon: `${c['retest_entry']}`\n"
                 f"   • Stop Loss: `${c['sl']}` (+{c['risk_pct']}%)\n"
                 f"   • Target TP 1: `${c['tp1']}` ({tp_info})\n"
                 f"   • Target TP 2: `${c['tp2']}`\n"
+                f"   • 🛡️ *Anti-Likuidasi:* Rekomendasi Lev *{c.get('recommended_leverage', '3x-5x')}* (Maks: `{c.get('max_safe_leverage')}`) | Batas Liq: `{c.get('safe_liq_price')}`\n"
+                f"   • 💰 *Alokasi Modal:* Maks. 20%–30% saldo (sisa 70% penahan liq)\n"
+                f"   • ⚡ *Funding Rate:* `{c.get('funding_rate', 0.01)}%`\n"
                 f"   • 🐋 *Level Paus:* Dump `${c.get('whale_dump')}` (-{c.get('whale_drop_pct')}%) | Pump `${c.get('whale_pump')}` (+{c.get('whale_pump_pct')}%)\n\n"
             )
     else:
@@ -88,9 +96,9 @@ def format_telegram_message(data: dict) -> str:
 
     msg += (
         "💡 *Panduan Eksekusi Emas:*\n"
-        "• Saat Red Alert The Fed aktif: DILARANG Market Order instan! Gunakan Trigger Breakout atau jaring Limit Order di zona Paus.\n"
+        "• Anti-Likuidasi: Gunakan leverage aman (3x-5x) & masuk maks. 20%-30% dari saldo dompet.\n"
+        "• Pastikan titik likuidasi exchange Anda berada jauh di luar batas aman yang tertera.\n"
         "• Kunci 50% profit di TP1 dan segera geser SL ke BEP (Zero-Risk Trade).\n"
-        "• Batasi resiko maksimal 1-2% dari modal per transaksi.\n"
     )
     return msg
 
@@ -179,10 +187,22 @@ def print_terminal_report(data: dict):
             print(f"{c['symbol']:<10} {c['direction']:<7} {c['entry_market']:<14} {dump_str:<24} {pump_str:<24} {shake_str}")
         print("="*118)
 
+        print("\n" + "="*118)
+        print(" 🛡️ PANDUAN MANAJEMEN RISIKO & ANTI-LIKUIDASI (SAFE LEVERAGE & FVG IMBALANCE)")
+        print("    Aturan agar harga likuidasi TIDAK PERNAH tersentuh sebelum Stop Loss:")
+        print("-" * 118)
+        print(f"{'Pair':<10} {'Arah':<7} {'SL Distance':<13} {'Rekomendasi Lev':<18} {'Batas Likuidasi Wajib':<26} {'Funding':<10} {'Smart Money FVG'}")
+        print("-" * 118)
+        for c in active_signals:
+            fvg_disp = c.get('fvg_status', '-') if c.get('fvg_status') != '-' else 'Normal'
+            fr_str = f"{c.get('funding_rate', 0.01)}%"
+            print(f"{c['symbol']:<10} {c['direction']:<7} {c['risk_pct']:<12}% {c.get('recommended_leverage', '3x-5x'):<18} {c.get('safe_liq_price', '-'):<26} {fr_str:<10} {fvg_disp}")
+        print("="*118)
+
     print("💡 STRATEGI EKSEKUSI EMAS:")
-    print("   1. Kolom 1D/ADX: Menampilkan arah tren harian (UP/DO) & kekuatan tren ADX (>=25 tren kuat, <20 sideways).")
-    print("   2. Masuk posisi via 'Trigger Konfirmasi' (Breakout) atau tunggu 'Retest Diskon'.")
-    print("   3. Saat Berita The Fed Rilis: Manfaatkan 'Zona Bantingan Paus' untuk jaring beli diskon (Long) atau target TP ekstrim (Short).")
+    print("   1. Anti-Likuidasi: Gunakan leverage aman (3x-5x) & masuk maksimal 20%-30% dari total saldo dompet.")
+    print("   2. Titik Likuidasi WAJIB berada di luar batas yang tertera agar Stop Loss terlindungi penuh.")
+    print("   3. Smart Money FVG: Pasang antrean 'Retest Diskon' tepat di celah imbalance untuk harga paling murah.")
     print("   4. Begitu TP 1 tercapai: KUNCI 50% PROFIT, lalu GESER SL ke titik Entry (BEP / Zero-Risk).")
     print("="*118 + "\n")
 

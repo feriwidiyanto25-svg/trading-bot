@@ -29,12 +29,17 @@ from indicators import (
     detect_wick_rejection,
     detect_volume_status,
     detect_ath_atl_and_fibonacci,
-    detect_rsi_divergence
+    detect_rsi_divergence,
+    detect_fair_value_gap
 )
 from macro_news import (
     get_crypto_fear_and_greed,
     get_fed_and_macro_intel,
     project_whale_shakeout_levels
+)
+from funding_rates import (
+    get_all_funding_rates,
+    evaluate_funding_rate
 )
 
 def get_top_liquid_pairs() -> List[Dict[str, Any]]:
@@ -127,7 +132,7 @@ def get_daily_macro_trend(symbol: str) -> str:
     else:
         return "Downtrend"
 
-def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = None, timeframe: str = TIMEFRAME) -> Dict[str, Any]:
+def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = None, timeframe: str = TIMEFRAME, funding_map: Dict[str, float] = None) -> Dict[str, Any]:
     """
     Menganalisis satu koin dengan multi-kondisi pasar kripto komprehensif:
     1. Tren Makro (EMA 200) & Retest (EMA 50)
@@ -141,6 +146,9 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
     9. Sentiment Order Book: Imbalansi Bid vs Ask
     10. Korelasi Rezim Pasar Bitcoin (BTC Macro Correlation)
     11. Fase ATH/ATL & Proyeksi Matematika Fibonacci (1.618 & 2.618)
+    12. Fair Value Gap (FVG Imbalance - Smart Money Concepts)
+    13. Funding Rate Futures & Squeeze Risk Analysis
+    14. Manajemen Risiko Anti-Likuidasi & Rekomendasi Leverage Aman
     """
     symbol = coin_meta["symbol"]
     df = get_klines_data(symbol, interval=timeframe)
@@ -165,6 +173,8 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
     vol_status = detect_volume_status(df)
     ath_atl = detect_ath_atl_and_fibonacci(df)
     divergence = detect_rsi_divergence(df, lookback=20)
+    fvg = detect_fair_value_gap(df, lookback=15)
+    fr_eval = evaluate_funding_rate(symbol, funding_map if funding_map else {})
 
     close_p = c['close']
     ema200_p = c['ema_200']
@@ -287,6 +297,28 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         score += ath_atl["score_impact"]
         reasons.append(ath_atl["label"])
 
+    # M. Faktor Fair Value Gap (FVG Imbalance - Smart Money Concepts)
+    if fvg["has_fvg"]:
+        score += fvg["score_impact"]
+        reasons.append(fvg["label"])
+
+    # N. Faktor Funding Rate Futures (Squeeze Risk Detection)
+    if fr_eval["status"] != "NEUTRAL":
+        if score > 0: # Sinyal Long
+            if fr_eval["bias"] == "SHORT_BIAS":
+                score -= 20
+                reasons.append(fr_eval["label"])
+            elif fr_eval["bias"] == "LONG_BIAS":
+                score += 20
+                reasons.append(fr_eval["label"])
+        elif score < 0: # Sinyal Short
+            if fr_eval["bias"] == "SHORT_BIAS":
+                score -= 20
+                reasons.append(fr_eval["label"])
+            elif fr_eval["bias"] == "LONG_BIAS":
+                score += 20
+                reasons.append(fr_eval["label"])
+
     # 3. Hitung Setup Eksekusi Cerdas
     # Gunakan harga LIVE real-time saat ini dari ticker (bukan harga candle tutup sebelumnya)
     entry_market = coin_meta["last_price"] if coin_meta.get("last_price", 0) > 0 else close_p
@@ -310,8 +342,10 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         # Trigger Breakout (Buy Stop): Tembus pucuk (High), wajib di atas harga pasar saat ini
         trigger_entry = max(c['high'], entry_market * 1.002)
 
-        # Retest Diskon (Limit Buy): Wajib berada di bawah harga pasar saat ini!
-        if c['low'] < entry_market and c['low'] > sl:
+        # Retest Diskon (Limit Buy): Gunakan bibir FVG jika tersedia, atau swing low candle sebelumnya
+        if fvg["has_fvg"] and fvg["type"] == "BULLISH_FVG" and fvg["fvg_price"] < entry_market and fvg["fvg_price"] > sl:
+            retest_entry = fvg["fvg_price"]
+        elif c['low'] < entry_market and c['low'] > sl:
             retest_entry = c['low']
         else:
             retest_entry = max(entry_market - (0.5 * risk_distance), sl + (0.2 * risk_distance))
@@ -332,8 +366,10 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         # Trigger Breakdown (Sell Stop): Jebol dasar (Low), wajib di bawah harga pasar saat ini
         trigger_entry = min(c['low'], entry_market * 0.998)
 
-        # Retest Pantulan (Limit Sell): Wajib berada di atas harga pasar saat ini!
-        if c['high'] > entry_market and c['high'] < sl:
+        # Retest Pantulan (Limit Sell): Gunakan bibir FVG jika tersedia, atau swing high candle sebelumnya
+        if fvg["has_fvg"] and fvg["type"] == "BEARISH_FVG" and fvg["fvg_price"] > entry_market and fvg["fvg_price"] < sl:
+            retest_entry = fvg["fvg_price"]
+        elif c['high'] > entry_market and c['high'] < sl:
             retest_entry = c['high']
         else:
             retest_entry = min(entry_market + (0.5 * risk_distance), sl - (0.2 * risk_distance))
@@ -354,6 +390,18 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
 
     whale_proj = project_whale_shakeout_levels(entry_market, safe_atr, direction)
 
+    # Hitung Rekomendasi Leverage Aman & Titik Anti-Likuidasi
+    safe_lev = int(50.0 / max(risk_pct, 1.0))
+    max_safe_leverage = max(min(safe_lev, 20), 2)
+    recommended_leverage = "3x - 5x" if max_safe_leverage >= 5 else f"2x - {max_safe_leverage}x"
+
+    if direction == "LONG":
+        safe_liq_price = entry_market * (1.0 - (risk_pct * 1.5 / 100.0))
+        safe_liq_label = f"< ${format_price(safe_liq_price)}"
+    else:
+        safe_liq_price = entry_market * (1.0 + (risk_pct * 1.5 / 100.0))
+        safe_liq_label = f"> ${format_price(safe_liq_price)}"
+
     return {
         "symbol": symbol,
         "score": score,
@@ -365,6 +413,12 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         "tp1": format_price(tp1),
         "tp2": format_price(tp2),
         "tp_model": tp_model,
+        "recommended_leverage": recommended_leverage,
+        "max_safe_leverage": f"{max_safe_leverage}x",
+        "safe_liq_price": safe_liq_label,
+        "funding_rate": fr_eval["rate_pct"],
+        "funding_status": fr_eval["status"],
+        "fvg_status": fvg["label"] if fvg["has_fvg"] else "-",
         "whale_dump": format_price(whale_proj["whale_dump_pocket"]),
         "whale_pump": format_price(whale_proj["whale_pump_pocket"]),
         "whale_drop_pct": whale_proj["dump_pct"],
@@ -415,10 +469,11 @@ def run_market_screener(timeframe: str = TIMEFRAME) -> Dict[str, Any]:
     btc_status = get_btc_macro_regime()
     fear_greed = get_crypto_fear_and_greed()
     macro_intel = get_fed_and_macro_intel()
+    funding_map = get_all_funding_rates()
 
     results = []
     for p in pairs:
-        res = analyze_single_coin(p, btc_status=btc_status, timeframe=timeframe)
+        res = analyze_single_coin(p, btc_status=btc_status, timeframe=timeframe, funding_map=funding_map)
         if res:
             results.append(res)
 
