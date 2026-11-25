@@ -4,6 +4,7 @@ Mencakup Radar Sinyal Teknis, Radar The Fed, Fear & Greed Sentimen,
 serta Proyeksi Target Manipulasi Paus (Whale Shakeout Levels).
 """
 import json
+import time
 import datetime
 import requests
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
