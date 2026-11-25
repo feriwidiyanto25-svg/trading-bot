@@ -349,13 +349,16 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         # Trigger Breakout (Buy Stop): Tembus pucuk (High), wajib di atas harga pasar saat ini
         trigger_entry = max(c['high'], entry_market * 1.002)
 
-        # Retest Diskon (Limit Buy): Gunakan bibir FVG jika tersedia, atau swing low candle sebelumnya
-        if fvg["has_fvg"] and fvg["type"] == "BULLISH_FVG" and fvg["fvg_price"] < entry_market and fvg["fvg_price"] > sl:
+        # Retest Diskon (Limit Buy): Wajib memberikan diskon bermakna (minimal 25% dari jarak SL atau 0.8% dari entry)
+        min_discount = max(entry_market * 0.008, 0.25 * risk_distance)
+        target_discount_cap = entry_market - min_discount
+
+        if fvg["has_fvg"] and fvg["type"] == "BULLISH_FVG" and fvg["fvg_price"] <= target_discount_cap and fvg["fvg_price"] > sl:
             retest_entry = fvg["fvg_price"]
-        elif c['low'] < entry_market and c['low'] > sl:
-            retest_entry = c['low']
+        elif 'ema_50' in df.columns and df['ema_50'].iloc[-2] <= target_discount_cap and df['ema_50'].iloc[-2] > sl:
+            retest_entry = df['ema_50'].iloc[-2]
         else:
-            retest_entry = max(entry_market - (0.5 * risk_distance), sl + (0.2 * risk_distance))
+            retest_entry = max(entry_market - (0.4 * risk_distance), sl + (0.2 * risk_distance))
 
     elif score < 0:
         direction = "SHORT"
@@ -379,13 +382,16 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         # Trigger Breakdown (Sell Stop): Jebol dasar (Low), wajib di bawah harga pasar saat ini
         trigger_entry = min(c['low'], entry_market * 0.998)
 
-        # Retest Pantulan (Limit Sell): Gunakan bibir FVG jika tersedia, atau swing high candle sebelumnya
-        if fvg["has_fvg"] and fvg["type"] == "BEARISH_FVG" and fvg["fvg_price"] > entry_market and fvg["fvg_price"] < sl:
+        # Retest Pantulan (Limit Sell): Wajib memberikan pantulan bermakna (minimal 25% dari jarak SL atau 0.8% dari entry)
+        min_bounce = max(entry_market * 0.008, 0.25 * risk_distance)
+        target_bounce_cap = entry_market + min_bounce
+
+        if fvg["has_fvg"] and fvg["type"] == "BEARISH_FVG" and fvg["fvg_price"] >= target_bounce_cap and fvg["fvg_price"] < sl:
             retest_entry = fvg["fvg_price"]
-        elif c['high'] > entry_market and c['high'] < sl:
-            retest_entry = c['high']
+        elif 'ema_50' in df.columns and df['ema_50'].iloc[-2] >= target_bounce_cap and df['ema_50'].iloc[-2] < sl:
+            retest_entry = df['ema_50'].iloc[-2]
         else:
-            retest_entry = min(entry_market + (0.5 * risk_distance), sl - (0.2 * risk_distance))
+            retest_entry = min(entry_market + (0.4 * risk_distance), sl - (0.2 * risk_distance))
     else:
         return None
 
