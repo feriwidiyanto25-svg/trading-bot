@@ -45,7 +45,10 @@ def format_telegram_message(data: dict) -> str:
                 f"• 🐋 *Paus:* Dump `${c.get('whale_dump', '0.0')}` (-{c.get('whale_drop_pct', 0)}%) | Pump `${c.get('whale_pump', '0.0')}` (+{c.get('whale_pump_pct', 0)}%)\n"
             )
     else:
-        msg += "   _Tidak ada koin Long yang memenuhi filter saat ini._\n"
+        if btc.get("trend") == "Downtrend":
+            msg += "   🛡️ *Veto Makro Aktif:* Sinyal LONG ditahan karena BTC Downtrend. Hindari beli altcoin saat pasar bleeding!\n"
+        else:
+            msg += "   _Tidak ada koin Long yang memenuhi filter saat ini._\n"
 
     msg += "\n━━━━━━━━━━━━━━━━━━━━━\n\n"
 
@@ -65,11 +68,17 @@ def format_telegram_message(data: dict) -> str:
                 f"• 🐋 *Paus:* Dump `${c.get('whale_dump', '0.0')}` (-{c.get('whale_drop_pct', 0)}%) | Pump `${c.get('whale_pump', '0.0')}` (+{c.get('whale_pump_pct', 0)}%)\n"
             )
     else:
-        msg += "   _Tidak ada koin Short yang memenuhi filter saat ini._\n"
+        if btc.get("trend") == "Uptrend":
+            msg += "   🛡️ *Veto Makro Aktif:* Sinyal SHORT ditahan karena BTC Uptrend. Hindari short altcoin saat pasar bullish!\n"
+        else:
+            msg += "   _Tidak ada koin Short yang memenuhi filter saat ini._\n"
 
     msg += (
         "\n━━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 *Tips:* Gunakan modal masuk maks 20-30% saldo agar liq jauh di luar batas aman. Kunci profit di TP1 & pasang SL BEP!"
+        "💡 *Tips Eksekusi Cerdas:*\n"
+        "• *Gunakan Trigger Order (Buy/Sell Stop)* untuk konfirmasi arah atau pasang Limit di *Retest Diskon*.\n"
+        "• *JANGAN Hajar Kanan (Market Order)* saat pasar volatil / Extreme Fear!\n"
+        "• Gunakan modal maks 20-30% saldo agar liq aman. Kunci profit di TP1 & geser SL ke BEP!"
     )
     return msg
 

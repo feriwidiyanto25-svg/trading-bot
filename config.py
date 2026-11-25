@@ -18,7 +18,9 @@ TIMEFRAME = "4h"                 # Timeframe analisis (15m, 1h, 4h)
 CANDLE_LIMIT = 200               # Jumlah candle yang diambil untuk kalkulasi EMA 200, ATR, dan ATH/ATL
 
 # Pengaturan Manajemen Risiko (Risk Management)
-ATR_SL_MULTIPLIER = 1.5          # Pengali ATR untuk jarak Stop Loss
+ATR_SL_MULTIPLIER = 2.0          # Pengali ATR untuk jarak Stop Loss (dinaikkan ke 2.0 untuk toleransi volatilitas & noise)
+MIN_RISK_PCT_ALTCOIN = 2.2       # Minimal jarak Stop Loss 2.2% pada altcoin untuk cegah likuidasi spread/noise
+MIN_RISK_PCT_MAJORS = 1.5        # Minimal jarak Stop Loss 1.5% untuk BTC/ETH
 RRR_TP1 = 1.5                    # Rasio Risk-to-Reward TP 1 (1:1.5)
 RRR_TP2 = 2.5                    # Rasio Risk-to-Reward TP 2 (1:2.5)
 

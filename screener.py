@@ -15,6 +15,8 @@ from config import (
     TIMEFRAME,
     CANDLE_LIMIT,
     ATR_SL_MULTIPLIER,
+    MIN_RISK_PCT_ALTCOIN,
+    MIN_RISK_PCT_MAJORS,
     RRR_TP1,
     RRR_TP2
 )
@@ -324,15 +326,34 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
             score -= 15
             reasons.append(f"⚡ Order Book Dominan Jual ({100-bid_ratio:.0f}% Ask)")
 
-    # K. Faktor Rezim Pasar Bitcoin (BTC Macro Correlation)
+    # K. Faktor Rezim Pasar Bitcoin (BTC Macro Hard Filter)
     if btc_status and symbol != "BTCUSDT":
         btc_trend = btc_status.get("trend")
-        if btc_trend == "Downtrend" and score > 0:
-            score -= 15
-            reasons.append("⚠️ BTC Downtrend (Waspada Long)")
-        elif btc_trend == "Uptrend" and score < 0:
-            score += 15
-            reasons.append("⚠️ BTC Uptrend (Waspada Short)")
+        if btc_trend == "Downtrend":
+            if score > 0:
+                # Saat BTC Downtrend, Long dilarang keras KECUALI ada konfirmasi reversal kuat
+                has_reversal = any("SFP" in r or "Divergence" in r for r in reasons)
+                if has_reversal and score >= 85:
+                    score -= 15
+                    reasons.append("⚠️ Counter-Trend Long (Wajib Disiplin SL)")
+                else:
+                    score = -20  # Anulir Long jadi non-rekomendasi
+                    reasons.append("🛡️ Veto Makro: Long Dilarang saat BTC Downtrend")
+            else:
+                score -= 20
+                reasons.append("🌊 Selaras Tren Makro BTC (Short Diunggulkan)")
+        elif btc_trend == "Uptrend":
+            if score < 0:
+                has_reversal = any("SFP" in r or "Divergence" in r for r in reasons)
+                if has_reversal and score <= -85:
+                    score += 15
+                    reasons.append("⚠️ Counter-Trend Short (Wajib Disiplin SL)")
+                else:
+                    score = 20  # Anulir Short jadi non-rekomendasi
+                    reasons.append("🛡️ Veto Makro: Short Dilarang saat BTC Uptrend")
+            else:
+                score += 20
+                reasons.append("🌊 Selaras Tren Makro BTC (Long Diunggulkan)")
 
     # L. Faktor ATH / ATL Breakout & Fibonacci Extension
     if ath_atl["score_impact"] != 0:
@@ -353,17 +374,49 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
             score += 20
             reasons.append(fr_eval["label"])
 
-    # 3. Hitung Setup Eksekusi Cerdas
+    # O. Anti-FOMO & Anti-Capitulation Guardrails
+    price_change_24h = coin_meta.get("price_change_pct", 0)
+    if price_change_24h > 14.0 or rsi_val > 68:
+        if score > 0:
+            score -= 40
+        reasons.append("⛔ Anti-FOMO: Pucuk Pompa / Jenuh Beli (Dilarang Long)")
+
+    if price_change_24h < -18.0 and rsi_val < 28:
+        if score < 0:
+            score += 40
+        reasons.append("⚠️ Anti-Capitulation: Dasar Dump (Rawan Squeeze)")
+
+    # 3. Hitung Setup Eksekusi Cerdas (Institutional Swing Stop Loss)
     # Gunakan harga LIVE real-time saat ini dari ticker (bukan harga candle tutup sebelumnya)
     entry_market = coin_meta["last_price"] if coin_meta.get("last_price", 0) > 0 else close_p
     safe_atr = atr_val if atr_val > 0 else (entry_market * 0.02)
-    risk_distance = safe_atr * ATR_SL_MULTIPLIER
+    
+    # Deteksi Swing High/Low dari 8 candle terakhir (tidak termasuk candle yang sedang aktif)
+    lookback_slice = df.iloc[-9:-1] if len(df) >= 10 else df.iloc[:-1]
+    recent_swing_low = lookback_slice['low'].min() if not lookback_slice.empty else (entry_market * 0.98)
+    recent_swing_high = lookback_slice['high'].max() if not lookback_slice.empty else (entry_market * 1.02)
+
+    # Minimum Risk Floor (2.2% untuk altcoins, 1.5% untuk BTC/ETH)
+    is_major = symbol in ["BTCUSDT", "ETHUSDT"]
+    min_risk_pct = (MIN_RISK_PCT_MAJORS / 100.0) if is_major else (MIN_RISK_PCT_ALTCOIN / 100.0)
+    min_risk_dist = entry_market * min_risk_pct
+
+    # Jarak risiko dinamis: gabungan ATR 2.0x dan Floor Minimum
+    dynamic_risk_distance = max(safe_atr * ATR_SL_MULTIPLIER, min_risk_dist)
     tp_model = "RRR Standard (1:1.5 & 1:2.5)"
 
     if score > 0:
         direction = "LONG"
-        sl = entry_market - risk_distance
-        risk_pct = ((entry_market - sl) / entry_market) * 100
+        # Stop Loss ditaruh di bawah Swing Low dengan buffer 0.2 ATR, dan wajib melewati dynamic_risk_distance
+        swing_sl = recent_swing_low - (0.2 * safe_atr)
+        sl = min(entry_market - dynamic_risk_distance, swing_sl)
+        
+        # Batasi batas maksimal jarak SL agar tidak lebih dari 12%
+        if (entry_market - sl) > (entry_market * 0.12):
+            sl = entry_market * 0.88
+
+        risk_distance = entry_market - sl
+        risk_pct = (risk_distance / entry_market) * 100
         
         if ath_atl["status"] in ["ATH_BREAKOUT", "NEAR_ATH"] and ath_atl["fib_tp1"]:
             tp1 = ath_atl["fib_tp1"]
@@ -379,8 +432,8 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
             tp2 = entry_market + (risk_distance * RRR_TP2)
             tp_model = "RRR Standard (1:1.5 & 1:2.5)"
 
-        # Trigger Breakout (Buy Stop): Tembus pucuk (High), wajib di atas harga pasar saat ini
-        trigger_entry = max(c['high'], entry_market * 1.002)
+        # Trigger Breakout (Buy Stop): Tembus pucuk wajar (maksimal 1.5% dari entry)
+        trigger_entry = max(min(c['high'], entry_market * 1.015), entry_market * 1.002)
 
         # Retest Diskon (Limit Buy): Wajib memberikan diskon bermakna (minimal 25% dari jarak SL atau 0.8% dari entry)
         min_discount = max(entry_market * 0.008, 0.25 * risk_distance)
@@ -391,12 +444,20 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         elif 'ema_50' in df.columns and df['ema_50'].iloc[-2] <= target_discount_cap and df['ema_50'].iloc[-2] > sl:
             retest_entry = df['ema_50'].iloc[-2]
         else:
-            retest_entry = max(entry_market - (0.4 * risk_distance), sl + (0.2 * risk_distance))
+            retest_entry = max(entry_market - (0.35 * risk_distance), sl + (0.2 * risk_distance))
 
     elif score < 0:
         direction = "SHORT"
-        sl = entry_market + risk_distance
-        risk_pct = ((sl - entry_market) / entry_market) * 100
+        # Stop Loss ditaruh di atas Swing High dengan buffer 0.2 ATR, dan wajib melewati dynamic_risk_distance
+        swing_sl = recent_swing_high + (0.2 * safe_atr)
+        sl = max(entry_market + dynamic_risk_distance, swing_sl)
+        
+        # Batasi batas maksimal jarak SL agar tidak lebih dari 12%
+        if (sl - entry_market) > (entry_market * 0.12):
+            sl = entry_market * 1.12
+
+        risk_distance = sl - entry_market
+        risk_pct = (risk_distance / entry_market) * 100
 
         if ath_atl["status"] in ["ATL_BREAKDOWN", "NEAR_ATL"] and ath_atl["fib_tp1"]:
             tp1 = ath_atl["fib_tp1"]
@@ -412,8 +473,8 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
             tp2 = entry_market - (risk_distance * RRR_TP2)
             tp_model = "RRR Standard (1:1.5 & 1:2.5)"
 
-        # Trigger Breakdown (Sell Stop): Jebol dasar (Low), wajib di bawah harga pasar saat ini
-        trigger_entry = min(c['low'], entry_market * 0.998)
+        # Trigger Breakdown (Sell Stop): Jebol dasar wajar (maksimal 1.5% di bawah entry)
+        trigger_entry = min(max(c['low'], entry_market * 0.985), entry_market * 0.998)
 
         # Retest Pantulan (Limit Sell): Wajib memberikan pantulan bermakna (minimal 25% dari jarak SL atau 0.8% dari entry)
         min_bounce = max(entry_market * 0.008, 0.25 * risk_distance)
@@ -424,7 +485,7 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
         elif 'ema_50' in df.columns and df['ema_50'].iloc[-2] >= target_bounce_cap and df['ema_50'].iloc[-2] < sl:
             retest_entry = df['ema_50'].iloc[-2]
         else:
-            retest_entry = min(entry_market + (0.4 * risk_distance), sl - (0.2 * risk_distance))
+            retest_entry = min(entry_market + (0.35 * risk_distance), sl - (0.2 * risk_distance))
     else:
         return None
 
@@ -531,9 +592,20 @@ def run_market_screener(timeframe: str = TIMEFRAME) -> Dict[str, Any]:
 
     results.sort(key=lambda x: x["score"], reverse=True)
 
-    top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 30][:2]
+    # Filter Kualitas Sinyal Berdasarkan Rezim Pasar Makro
+    btc_trend = btc_status.get("trend") if btc_status else "Neutral"
+    if btc_trend == "Downtrend":
+        # Saat BTC Downtrend: Blokir Long biasa, hanya izinkan Long jika skor sangat tinggi (>=75)
+        top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 75][:2]
+        top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -35]
+    elif btc_trend == "Uptrend":
+        # Saat BTC Uptrend: Blokir Short biasa, hanya izinkan Short jika skor sangat negatif (<=-75)
+        top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 35][:2]
+        top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -75]
+    else:
+        top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 40][:2]
+        top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -40]
 
-    top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -30]
     top_shorts.sort(key=lambda x: x["score"])
     top_shorts = top_shorts[:2]
 
