@@ -479,11 +479,11 @@ def run_market_screener(timeframe: str = TIMEFRAME) -> Dict[str, Any]:
 
     results.sort(key=lambda x: x["score"], reverse=True)
 
-    top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 30][:5]
+    top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 30][:2]
 
     top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -30]
     top_shorts.sort(key=lambda x: x["score"])
-    top_shorts = top_shorts[:5]
+    top_shorts = top_shorts[:2]
 
     return {
         "timeframe": timeframe,

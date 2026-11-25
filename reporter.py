@@ -9,7 +9,7 @@ import requests
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 def format_telegram_message(data: dict) -> str:
-    """Membuat pesan terformat rapi untuk notifikasi Telegram lengkap dengan Intelijen Paus"""
+    """Membuat pesan terformat ringkas, padat, dan ramah mobile untuk notifikasi Telegram"""
     now = datetime.datetime.now().strftime("%d %b %Y | %H:%M WIB")
     longs = data.get("longs", [])
     shorts = data.get("shorts", [])
@@ -18,89 +18,56 @@ def format_telegram_message(data: dict) -> str:
     macro = data.get("macro_intel", {})
 
     tf = data.get("timeframe", "4h")
-    tf_label = "15 Menit (Intraday Cepat)" if tf == "15m" else ("1 Jam (Intraday)" if tf == "1h" else "4 Jam (Swing)")
 
-    msg = f"📊 *[RADAR PASAR CRYPTO & SETUP EKSEKUSI CERDAS]*\n"
-    msg += f"🕒 Waktu: {now}\n"
-    msg += f"⏱️ Timeframe Analisis: *{tf}* ({tf_label})\n"
-    if btc:
-        msg += f"🌐 Rezim BTC: *{btc.get('desc', 'N/A')}*\n"
+    msg = f"📊 *[RADAR PASAR CRYPTO - TF {tf.upper()}]*\n"
+    msg += f"🕒 {now} | Rezim BTC: *{btc.get('desc', 'N/A')}*\n"
     if fg:
-        msg += f"😨 Fear & Greed: *{fg.get('value', 50)}/100* ({fg.get('classification', 'Neutral')})\n"
-    msg += f"🔍 Total Koin Dipindai: {data.get('total_scanned', 0)} koin\n"
+        msg += f"😨 Sentiment: *{fg.get('value', 50)}/100* ({fg.get('classification', 'Neutral')})\n"
+    if macro and macro.get("has_alert"):
+        nearest = macro.get("nearest_event", {})
+        if nearest:
+            msg += f"🚨 *The Fed / Makro:* {nearest.get('title')} ({nearest.get('event_time_wib')})\n"
     msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    # --- RADAR THE FED & BERITA MAKRO ---
-    if macro and macro.get("has_alert"):
-        status_text = macro.get("status_text", "")
-        nearest = macro.get("nearest_event", {})
-        msg += f"🚨 *RADAR THE FED & AGENDA MAKRO:*\n"
-        msg += f"• Status: *{status_text}*\n"
-        if nearest:
-            msg += (
-                f"• Event: *{nearest.get('title')}* [{nearest.get('impact')}]\n"
-                f"• Jadwal: {nearest.get('event_time_wib')} (Forecast: {nearest.get('forecast')} vs Prev: {nearest.get('previous')})\n"
-            )
-        msg += f"• 🐋 *Taktik Paus:* _{macro.get('whale_tactic')}_\n"
-        msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
-
-    # --- TOP 5 LONGS ---
-    msg += "🟢 *TOP POTENSI NAIK (LONG SETUP)*\n\n"
+    # --- TOP 2 LONGS ---
+    msg += "🟢 *TOP 2 LONG SETUP (POTENSI NAIK)*\n"
     if longs:
         for i, c in enumerate(longs, 1):
-            reasons_str = " + ".join(c['reasons'][:3])
-            tp_info = c.get('tp_model', 'RRR Standard')
-            fvg_line = f"   • {c['fvg_status']}\n" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
+            fvg_note = f" [{c['fvg_status']}]" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
+            reasons_str = " + ".join(c['reasons'][:2])
             msg += (
-                f"{i}. 🚀 *{c['symbol']}* (Skor: `+{c['score']}` | 1D: `{c.get('daily_trend')}`)\n"
-                f"   • Sinyal: _{reasons_str}_\n"
-                f"{fvg_line}"
-                f"   • Market Entry: `${c['entry_market']}`\n"
-                f"   • ⚡ Trigger Konfirmasi: `${c['trigger_entry']}` (Tembus Pucuk)\n"
-                f"   • 🎯 Retest Diskon: `${c['retest_entry']}`\n"
-                f"   • Stop Loss: `${c['sl']}` (-{c['risk_pct']}%)\n"
-                f"   • Target TP 1: `${c['tp1']}` ({tp_info})\n"
-                f"   • Target TP 2: `${c['tp2']}`\n"
-                f"   • 🛡️ *Anti-Likuidasi:* Rekomendasi Lev *{c.get('recommended_leverage', '3x-5x')}* (Maks: `{c.get('max_safe_leverage')}`) | Batas Liq: `{c.get('safe_liq_price')}`\n"
-                f"   • 💰 *Alokasi Modal:* Maks. 20%–30% saldo (sisa 70% penahan liq)\n"
-                f"   • ⚡ *Funding Rate:* `{c.get('funding_rate', 0.01)}%`\n"
-                f"   • 🐋 *Level Paus:* Dump `${c.get('whale_dump')}` (-{c.get('whale_drop_pct')}%) | Pump `${c.get('whale_pump')}` (+{c.get('whale_pump_pct')}%)\n\n"
+                f"\n*{i}. {c['symbol']}* (Skor: `+{c['score']}` | 1D: `{c.get('daily_trend')}`){fvg_note}\n"
+                f"• Sinyal: _{reasons_str}_\n"
+                f"• Entry: `${c['entry_market']}` | Trig: `${c['trigger_entry']}` | Retest: `${c['retest_entry']}`\n"
+                f"• SL: `${c['sl']}` (-{c['risk_pct']}%) | TP1: `${c['tp1']}` | TP2: `${c['tp2']}`\n"
+                f"• 🛡️ *Lev Aman:* `{c.get('recommended_leverage', '3x-5x')}` (Maks: `{c.get('max_safe_leverage')}`) | *Liq:* `< ${c.get('safe_liq_price')}`\n"
+                f"• 🐋 *Paus:* Dump `${c.get('whale_dump')}` (-{c.get('whale_drop_pct')}%) | Pump `${c.get('whale_pump')}` (+{c.get('whale_pump_pct')}%)\n"
             )
     else:
-        msg += "   _Tidak ada koin yang memenuhi kriteria Long saat ini._\n\n"
+        msg += "   _Tidak ada koin Long yang memenuhi filter saat ini._\n"
 
-    msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+    msg += "\n━━━━━━━━━━━━━━━━━━━━━\n\n"
 
-    # --- TOP 5 SHORTS ---
-    msg += "🔴 *TOP POTENSI TURUN (SHORT SETUP)*\n\n"
+    # --- TOP 2 SHORTS ---
+    msg += "🔴 *TOP 2 SHORT SETUP (POTENSI TURUN)*\n"
     if shorts:
         for i, c in enumerate(shorts, 1):
-            reasons_str = " + ".join(c['reasons'][:3])
-            tp_info = c.get('tp_model', 'RRR Standard')
-            fvg_line = f"   • {c['fvg_status']}\n" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
+            fvg_note = f" [{c['fvg_status']}]" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
+            reasons_str = " + ".join(c['reasons'][:2])
             msg += (
-                f"{i}. 🔻 *{c['symbol']}* (Skor: `{c['score']}` | 1D: `{c.get('daily_trend')}`)\n"
-                f"   • Sinyal: _{reasons_str}_\n"
-                f"{fvg_line}"
-                f"   • Market Entry: `${c['entry_market']}`\n"
-                f"   • ⚡ Trigger Konfirmasi: `${c['trigger_entry']}` (Jebol Dasar)\n"
-                f"   • 🎯 Retest Diskon: `${c['retest_entry']}`\n"
-                f"   • Stop Loss: `${c['sl']}` (+{c['risk_pct']}%)\n"
-                f"   • Target TP 1: `${c['tp1']}` ({tp_info})\n"
-                f"   • Target TP 2: `${c['tp2']}`\n"
-                f"   • 🛡️ *Anti-Likuidasi:* Rekomendasi Lev *{c.get('recommended_leverage', '3x-5x')}* (Maks: `{c.get('max_safe_leverage')}`) | Batas Liq: `{c.get('safe_liq_price')}`\n"
-                f"   • 💰 *Alokasi Modal:* Maks. 20%–30% saldo (sisa 70% penahan liq)\n"
-                f"   • ⚡ *Funding Rate:* `{c.get('funding_rate', 0.01)}%`\n"
-                f"   • 🐋 *Level Paus:* Dump `${c.get('whale_dump')}` (-{c.get('whale_drop_pct')}%) | Pump `${c.get('whale_pump')}` (+{c.get('whale_pump_pct')}%)\n\n"
+                f"\n*{i}. {c['symbol']}* (Skor: `{c['score']}` | 1D: `{c.get('daily_trend')}`){fvg_note}\n"
+                f"• Sinyal: _{reasons_str}_\n"
+                f"• Entry: `${c['entry_market']}` | Trig: `${c['trigger_entry']}` | Retest: `${c['retest_entry']}`\n"
+                f"• SL: `${c['sl']}` (+{c['risk_pct']}%) | TP1: `${c['tp1']}` | TP2: `${c['tp2']}`\n"
+                f"• 🛡️ *Lev Aman:* `{c.get('recommended_leverage', '3x-5x')}` (Maks: `{c.get('max_safe_leverage')}`) | *Liq:* `> ${c.get('safe_liq_price')}`\n"
+                f"• 🐋 *Paus:* Dump `${c.get('whale_dump')}` (-{c.get('whale_drop_pct')}%) | Pump `${c.get('whale_pump')}` (+{c.get('whale_pump_pct')}%)\n"
             )
     else:
-        msg += "   _Tidak ada koin yang memenuhi kriteria Short saat ini._\n\n"
+        msg += "   _Tidak ada koin Short yang memenuhi filter saat ini._\n"
 
     msg += (
-        "💡 *Panduan Eksekusi Emas:*\n"
-        "• Anti-Likuidasi: Gunakan leverage aman (3x-5x) & masuk maks. 20%-30% dari saldo dompet.\n"
-        "• Pastikan titik likuidasi exchange Anda berada jauh di luar batas aman yang tertera.\n"
-        "• Kunci 50% profit di TP1 dan segera geser SL ke BEP (Zero-Risk Trade).\n"
+        "\n━━━━━━━━━━━━━━━━━━━━━\n"
+        "💡 *Tips:* Gunakan modal masuk maks 20-30% saldo agar liq jauh di luar batas aman. Kunci profit di TP1 & pasang SL BEP!"
     )
     return msg
 
