@@ -12,9 +12,9 @@ export default {
 
     try {
       const update = await request.json();
-      const botToken = env.TELEGRAM_BOT_TOKEN;
-      const allowedChatId = env.TELEGRAM_CHAT_ID;
-      const githubToken = env.GITHUB_PAT; // Personal Access Token (PAT)
+      const botToken = env.TELEGRAM_BOT_TOKEN || env.BOT_TOKEN;
+      const allowedChatId = env.TELEGRAM_CHAT_ID || env.CHAT_ID;
+      const githubToken = env.GITHUB_PAT || env.GITHUB_TOKEN;
       const githubRepo = env.GITHUB_REPO || "feriwidiyanto25-svg/trading-bot";
 
       // 1. Tangani Klik Tombol Interaktif (Inline Button)
