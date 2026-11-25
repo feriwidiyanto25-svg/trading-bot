@@ -7,16 +7,17 @@ import argparse
 from screener import run_market_screener, analyze_specific_coin
 from reporter import print_terminal_report, format_telegram_message, send_telegram_alert, save_to_json
 
-def scan_once(timeframe: str = "4h", enable_telegram: bool = False, symbol: str = ""):
+def scan_once(timeframe: str = "4h", enable_telegram: bool = False, symbol: str = "", mode: str = "trend"):
+    mode_desc = "Mode 2: Radar Pre-Pump / Whale Hunter" if mode == "pump" else "Mode 1: Trend Konservatif"
     if symbol:
-        print(f"\n[+] Memulai analisis koin khusus: {symbol.upper()} (Timeframe: {timeframe})...")
-        data = analyze_specific_coin(symbol=symbol, timeframe=timeframe)
+        print(f"\n[+] Memulai analisis koin khusus: {symbol.upper()} (Timeframe: {timeframe} | {mode_desc})...")
+        data = analyze_specific_coin(symbol=symbol, timeframe=timeframe, mode=mode)
         if not data:
             print(f"[!] Koin '{symbol}' tidak ditemukan atau datanya tidak mencukupi.")
             return
     else:
-        print(f"\n[+] Memulai pemindaian koin di Binance Vision API (Timeframe: {timeframe})...")
-        data = run_market_screener(timeframe=timeframe)
+        print(f"\n[+] Memulai pemindaian koin di Binance Vision API (Timeframe: {timeframe} | {mode_desc})...")
+        data = run_market_screener(timeframe=timeframe, mode=mode)
     
     # Cetak ke layar CMD
     print_terminal_report(data)
@@ -38,18 +39,19 @@ def main():
     parser = argparse.ArgumentParser(description="Crypto Market Screener (Binance)")
     parser.add_argument("--symbol", type=str, default="", help="Analisis satu koin spesifik (contoh: --symbol DOGS atau --symbol BTC)")
     parser.add_argument("--timeframe", type=str, default="4h", choices=["15m", "1h", "4h"], help="Timeframe analisis (15m, 1h, 4h)")
+    parser.add_argument("--mode", type=str, default="trend", choices=["trend", "pump"], help="Mode analisis: 'trend' (Konservatif) atau 'pump' (Radar Pre-Pump / Whale Hunter)")
     parser.add_argument("--loop", type=int, default=0, help="Jalankan berkala tiap X menit (contoh: --loop 15)")
     parser.add_argument("--telegram", action="store_true", help="Kirim hasil ke Telegram")
     args = parser.parse_args()
 
     if args.loop > 0:
-        print(f"[+] Bot berjalan dalam mode LOOP setiap {args.loop} menit (TF: {args.timeframe}). Tekan Ctrl+C untuk berhenti.")
+        print(f"[+] Bot berjalan dalam mode LOOP setiap {args.loop} menit (TF: {args.timeframe} | Mode: {args.mode}). Tekan Ctrl+C untuk berhenti.")
         while True:
-            scan_once(timeframe=args.timeframe, enable_telegram=args.telegram, symbol=args.symbol)
+            scan_once(timeframe=args.timeframe, enable_telegram=args.telegram, symbol=args.symbol, mode=args.mode)
             print(f"[i] Menunggu {args.loop} menit untuk pemindaian berikutnya...")
             time.sleep(args.loop * 60)
     else:
-        scan_once(timeframe=args.timeframe, enable_telegram=args.telegram, symbol=args.symbol)
+        scan_once(timeframe=args.timeframe, enable_telegram=args.telegram, symbol=args.symbol, mode=args.mode)
 
 if __name__ == "__main__":
     main()

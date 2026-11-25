@@ -11,7 +11,8 @@ BINANCE_BASE_URL = os.getenv("BINANCE_BASE_URL", "https://data-api.binance.visio
 
 # Pengaturan Filter Pasar
 QUOTE_ASSET = "USDT"
-MIN_24H_VOLUME_USD = 5_000_000  # Minimal volume $5 Juta (menangkap koin gainer seperti LISTA)
+MIN_24H_VOLUME_USD = 5_000_000  # Minimal volume $5 Juta untuk Mode Trend Konservatif
+MIN_VOLUME_PREPUMP_USD = 1_000_000 # Minimal volume $1 Juta untuk Mode Pre-Pump / Whale Hunter (tangkap koin seperti SSV)
 MAX_PAIRS_TO_ANALYZE = 50        # Batasi koin teratas agar proses scan cepat
 TOP_GAINERS_COUNT = 15           # Sertakan 15 koin kenaikan persentase tertinggi 24 jam
 TIMEFRAME = "4h"                 # Timeframe analisis (15m, 1h, 4h)

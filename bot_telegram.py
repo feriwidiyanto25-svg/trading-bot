@@ -19,24 +19,26 @@ def send_menu(chat_id: str):
         "chat_id": chat_id,
         "text": (
             "🤖 *[RADAR CRYPTO & INTELIJEN PAUS INTERAKTIF]*\n\n"
-            "Silakan pilih *Timeframe* pemindaian pasar:\n"
-            "• *15 Menit (15m)*: Trading kilat selesai dalam 1–3 jam.\n"
-            "• *1 Jam (1h)*: Intraday selesai dalam 3–8 jam.\n"
-            "• *4 Jam (4h)*: Swing tenang selesai dalam 1–2 hari.\n\n"
-            "💡 *Ingin Cek 1 Koin Spesifik?*\n"
-            "Ketik langsung: `/cek <koin> [timeframe]`\n"
-            "Contoh: `/cek DOGS 15m` atau `/cek BTC 1h`\n\n"
-            "👇 *Atau klik tombol untuk scan seluruh pasar:* "
+            "Silakan pilih *Mode Analisis* yang Anda inginkan:\n\n"
+            "🚀 *Mode 2: Radar Pre-Pump (15m)*\n"
+            "• Memburu koin tidur yang diakumulasi Paus & siap meledak (mengabaikan BTC).\n"
+            "• Rekomendasi titik Trigger Buy Stop.\n\n"
+            "🛡️ *Mode 1: Trend Konservatif (15m, 1h, 4h)*\n"
+            "• Mengikuti rezim makro Bitcoin & proteksi modal ketat.\n\n"
+            "💡 *Analisis Koin Khusus:*\n"
+            "Ketik: `/cek <koin> [timeframe]` (contoh: `/cek SSV 15m` atau `/cek OM 1h`)\n\n"
+            "👇 *Klik tombol di bawah untuk mulai:* "
         ),
         "parse_mode": "Markdown",
         "reply_markup": {
             "inline_keyboard": [
                 [
-                    {"text": "⚡ Scan Cepat (15 Menit)", "callback_data": "scan_15m"},
-                    {"text": "⏱️ Scan Intraday (1 Jam)", "callback_data": "scan_1h"}
+                    {"text": "🚀 Radar Pre-Pump (15m)", "callback_data": "pump_15m"},
+                    {"text": "🛡️ Trend Aman (4 Jam)", "callback_data": "scan_4h"}
                 ],
                 [
-                    {"text": "📊 Scan Swing (4 Jam)", "callback_data": "scan_4h"}
+                    {"text": "⚡ Trend Cepat (15 Menit)", "callback_data": "scan_15m"},
+                    {"text": "⏱️ Trend Intraday (1 Jam)", "callback_data": "scan_1h"}
                 ]
             ]
         }
@@ -62,18 +64,21 @@ def send_chat_message(chat_id: str, text: str):
     except Exception:
         pass
 
-def process_scan_request(chat_id: str, timeframe: str):
-    """Menjalankan pemindaian sesuai timeframe pilihan dan mengirim hasilnya"""
-    tf_desc = "15 Menit" if timeframe == "15m" else ("1 Jam" if timeframe == "1h" else "4 Jam")
-    send_chat_message(chat_id, f"🔍 *Memulai pemindaian pasar timeframe {tf_desc}...*\n_Mohon tunggu sekitar 20-30 detik._")
+def process_scan_request(chat_id: str, timeframe: str = "4h", mode: str = "trend"):
+    """Menjalankan pemindaian sesuai timeframe dan mode pilihan dan mengirim hasilnya"""
+    if mode == "pump":
+        send_chat_message(chat_id, "🚀 *Memulai Radar Pre-Pump (Whale Hunter)...*\n_Memindai anomali volume & akumulasi Paus multi-hari. Tunggu ~25 detik..._")
+    else:
+        tf_desc = "15 Menit" if timeframe == "15m" else ("1 Jam" if timeframe == "1h" else "4 Jam")
+        send_chat_message(chat_id, f"🔍 *Memulai pemindaian pasar Trend Konservatif ({tf_desc})...*\n_Mohon tunggu sekitar 20-30 detik._")
     
-    print(f"\n[+] Permintaan scan via Telegram diterima (Timeframe: {timeframe})...")
-    data = run_market_screener(timeframe=timeframe)
+    print(f"\n[+] Permintaan scan via Telegram diterima (Timeframe: {timeframe} | Mode: {mode})...")
+    data = run_market_screener(timeframe=timeframe, mode=mode)
     msg = format_telegram_message(data)
     
     success = send_telegram_alert(msg)
     if success:
-        print(f"[+] Hasil scan {timeframe} berhasil dikirim ke Telegram!")
+        print(f"[+] Hasil scan {timeframe} ({mode}) berhasil dikirim ke Telegram!")
     else:
         send_chat_message(chat_id, "❌ Gagal mengirim hasil scan. Silakan coba lagi.")
 
@@ -137,17 +142,20 @@ def run_bot_listener():
                         answer_callback(cb_id, "Akses ditolak: Anda bukan pemilik bot.")
                         continue
 
-                    if cb_data == "scan_15m":
-                        answer_callback(cb_id, "Memulai scan 15 Menit...")
-                        process_scan_request(from_id, "15m")
+                    if cb_data == "pump_15m":
+                        answer_callback(cb_id, "Memulai Radar Pre-Pump 15m...")
+                        process_scan_request(from_id, "15m", mode="pump")
+                    elif cb_data == "scan_15m":
+                        answer_callback(cb_id, "Memulai scan Trend 15 Menit...")
+                        process_scan_request(from_id, "15m", mode="trend")
                     elif cb_data == "scan_1h":
-                        answer_callback(cb_id, "Memulai scan 1 Jam...")
-                        process_scan_request(from_id, "1h")
+                        answer_callback(cb_id, "Memulai scan Trend 1 Jam...")
+                        process_scan_request(from_id, "1h", mode="trend")
                     elif cb_data == "scan_4h":
-                        answer_callback(cb_id, "Memulai scan 4 Jam...")
-                        process_scan_request(from_id, "4h")
+                        answer_callback(cb_id, "Memulai scan Trend 4 Jam...")
+                        process_scan_request(from_id, "4h", mode="trend")
 
-                # 2. Menangani Pesan Teks (/menu, /scan 15m, /start)
+                # 2. Menangani Pesan Teks (/menu, /pump, /scan 15m, /cek)
                 elif "message" in update and "text" in update["message"]:
                     msg = update["message"]
                     from_id = str(msg["from"]["id"])
@@ -159,10 +167,12 @@ def run_bot_listener():
 
                     if text in ["/start", "/menu", "menu", "/help"]:
                         send_menu(from_id)
+                    elif text.startswith("/pump") or text.startswith("/prepump") or text.startswith("/hunt"):
+                        process_scan_request(from_id, "15m", mode="pump")
                     elif text.startswith("/scan"):
                         parts = text.split()
                         tf = parts[1] if len(parts) > 1 and parts[1] in ["15m", "1h", "4h"] else "4h"
-                        process_scan_request(from_id, tf)
+                        process_scan_request(from_id, tf, mode="trend")
                     elif text.startswith("/cek") or text.startswith("/analisa") or text.startswith("/check"):
                         parts = text.split()
                         if len(parts) > 1:
@@ -170,7 +180,7 @@ def run_bot_listener():
                             target_tf = parts[2] if len(parts) > 2 and parts[2] in ["15m", "1h", "4h"] else "15m"
                             process_single_coin_request(from_id, target_sym, target_tf)
                         else:
-                            send_chat_message(from_id, "💡 *Format salah!*\nGunakan: `/cek <koin> [timeframe]`\nContoh: `/cek DOGS 15m` atau `/cek BTC 1h`")
+                            send_chat_message(from_id, "💡 *Format salah!*\nGunakan: `/cek <koin> [timeframe]`\nContoh: `/cek SSV 15m` atau `/cek OM 1h`")
                     else:
                         send_menu(from_id)
 

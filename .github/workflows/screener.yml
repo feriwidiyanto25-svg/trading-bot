@@ -19,6 +19,14 @@ on:
           - '15m'
           - '1h'
           - '4h'
+      mode:
+        description: 'Mode Analisis'
+        required: true
+        default: 'trend'
+        type: choice
+        options:
+          - 'trend'
+          - 'pump'
       symbol:
         description: 'Koin Spesifik (Opsional, kosongkan untuk scan pasar, atau isi misal DOGS/BTC/ETH)'
         required: false
@@ -51,10 +59,14 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          if [ -n "${{ github.event.inputs.symbol }}" ]; then
-            python main.py --telegram --timeframe "${{ github.event.inputs.timeframe || '4h' }}" --symbol "${{ github.event.inputs.symbol }}"
+          MODE="${{ github.event.inputs.mode || 'trend' }}"
+          TIMEFRAME="${{ github.event.inputs.timeframe || '4h' }}"
+          SYMBOL="${{ github.event.inputs.symbol || '' }}"
+          
+          if [ -n "$SYMBOL" ]; then
+            python main.py --telegram --timeframe "$TIMEFRAME" --mode "$MODE" --symbol "$SYMBOL"
           else
-            python main.py --telegram --timeframe "${{ github.event.inputs.timeframe || '4h' }}"
+            python main.py --telegram --timeframe "$TIMEFRAME" --mode "$MODE"
           fi
 
       - name: Simpan & Commit Riwayat Sinyal

@@ -403,3 +403,108 @@ def detect_fair_value_gap(df: pd.DataFrame, lookback: int = 15) -> dict:
 
     return {"has_fvg": False, "type": "None", "fvg_price": None, "score_impact": 0, "label": ""}
 
+def detect_whale_accumulation_and_breakout(df_15m: pd.DataFrame, df_daily: pd.DataFrame = None) -> dict:
+    """
+    Mendeteksi Sinyal Pre-Pump / Dump Khusus Mode 2 (Whale Hunter):
+    1. Tangki Bensin (Multi-Day Accumulation di 1D): OBV menanjak, Volume Asymmetry (Hijau > Merah)
+    2. Pegas Ditekan (Volatility Squeeze): Rentang candle sebelum ledakan sempit/padat
+    3. Pematik Api (15m Trigger): Volume Spike >= 2.0x, Green Body Solid >= 50%, Tembus Resisten 15 Candle
+    """
+    if len(df_15m) < 20:
+        return {"is_pump_setup": False, "is_dump_setup": False, "score": 0, "label": "", "vol_ratio": 1.0, "details": []}
+
+    c_last = df_15m.iloc[-2]
+    c_curr = df_15m.iloc[-1]
+    
+    candle_range = c_last['high'] - c_last['low']
+    body = abs(c_last['close'] - c_last['open'])
+    body_pct = (body / candle_range) if candle_range > 0 else 0.0
+    is_green = c_last['close'] > c_last['open']
+    is_red = c_last['close'] < c_last['open']
+
+    # 1. Volume Spike Ratio (15m)
+    vol_last = c_last['volume']
+    vol_avg_10 = df_15m['volume'].iloc[-12:-2].mean()
+    vol_ratio = (vol_last / vol_avg_10) if vol_avg_10 > 0 else 1.0
+
+    # 2. Volatility Squeeze (Pegas Ditekan sebelum ledakan)
+    recent_ranges = (df_15m['high'] - df_15m['low']) / df_15m['close'].replace(0, np.nan)
+    squeeze_avg = recent_ranges.iloc[-10:-2].mean()
+    is_squeeze = squeeze_avg < 0.020 # Rentang rata-rata < 2.0%
+
+    # 3. Breakout Resisten / Breakdown Support
+    high_prev_15 = df_15m['high'].iloc[-17:-2].max()
+    low_prev_15 = df_15m['low'].iloc[-17:-2].min()
+    is_breakout_high = c_last['close'] >= (high_prev_15 * 0.998)
+    is_breakdown_low = c_last['close'] <= (low_prev_15 * 1.002)
+
+    # 4. Tangki Bensin (Multi-Day Stealth Accumulation 1D)
+    has_daily_accumulation = False
+    if df_daily is not None and len(df_daily) >= 7:
+        try:
+            green_vol = df_daily.loc[df_daily['close'] >= df_daily['open'], 'volume'].iloc[-7:].sum()
+            red_vol = df_daily.loc[df_daily['close'] < df_daily['open'], 'volume'].iloc[-7:].sum()
+            vol_asymmetry = (green_vol / red_vol) if red_vol > 0 else 1.5
+            
+            p_high_7d = df_daily['high'].iloc[-7:].max()
+            p_low_7d = df_daily['low'].iloc[-7:].min()
+            price_range_7d = ((p_high_7d - p_low_7d) / p_low_7d) if p_low_7d > 0 else 1.0
+            
+            # Harga konsolidasi (<25% rentang 7 hari) dan volume dominan hijau
+            if vol_asymmetry >= 1.25 and price_range_7d <= 0.28:
+                has_daily_accumulation = True
+        except Exception:
+            pass
+
+    details = []
+    
+    # Evaluasi Potensi PUMP (LONG)
+    if is_green and vol_ratio >= 1.8 and body_pct >= 0.45 and is_breakout_high:
+        score = 60
+        if has_daily_accumulation:
+            score += 35
+            details.append("🔋 Bensin Penuh: Akumulasi Diam-diam 7 Hari Terakhir")
+        if is_squeeze:
+            score += 20
+            details.append("⚡ Pegas Ditekan: Squeeze Breakout Baru Dimulai")
+        if vol_ratio >= 2.5:
+            score += 20
+            details.append(f"🔥 Ledakan Volume {vol_ratio:.1f}x Lipat")
+        else:
+            details.append(f"📈 Volume Naik {vol_ratio:.1f}x Lipat")
+
+        details.append("🟩 Candle Hijau Solid Menembus Resisten")
+        label = "🚀 PRE-PUMP WHALE BREAKOUT" if (has_daily_accumulation or is_squeeze) else "⚡ MOMENTUM SPIKE BREAKOUT"
+        return {
+            "is_pump_setup": True,
+            "is_dump_setup": False,
+            "score": score,
+            "label": label,
+            "vol_ratio": round(vol_ratio, 2),
+            "details": details
+        }
+
+    # Evaluasi Potensi DUMP (SHORT)
+    if is_red and vol_ratio >= 1.8 and body_pct >= 0.45 and is_breakdown_low:
+        score = -60
+        if is_squeeze:
+            score -= 20
+            details.append("⚡ Squeeze Breakdown: Longsor Baru Dimulai")
+        if vol_ratio >= 2.5:
+            score -= 25
+            details.append(f"🩸 Ledakan Volume Jual {vol_ratio:.1f}x Lipat")
+        else:
+            details.append(f"📉 Volume Jual Naik {vol_ratio:.1f}x Lipat")
+
+        details.append("🟥 Candle Merah Solid Menjebol Support")
+        return {
+            "is_pump_setup": False,
+            "is_dump_setup": True,
+            "score": score,
+            "label": "🩸 WHALE DUMP BREAKDOWN",
+            "vol_ratio": round(vol_ratio, 2),
+            "details": details
+        }
+
+    return {"is_pump_setup": False, "is_dump_setup": False, "score": 0, "label": "", "vol_ratio": round(vol_ratio, 2), "details": []}
+

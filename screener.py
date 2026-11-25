@@ -10,6 +10,7 @@ from config import (
     BINANCE_BASE_URL,
     QUOTE_ASSET,
     MIN_24H_VOLUME_USD,
+    MIN_VOLUME_PREPUMP_USD,
     MAX_PAIRS_TO_ANALYZE,
     TOP_GAINERS_COUNT,
     TIMEFRAME,
@@ -32,7 +33,8 @@ from indicators import (
     detect_volume_status,
     detect_ath_atl_and_fibonacci,
     detect_rsi_divergence,
-    detect_fair_value_gap
+    detect_fair_value_gap,
+    detect_whale_accumulation_and_breakout
 )
 from macro_news import (
     get_crypto_fear_and_greed,
@@ -45,7 +47,7 @@ from funding_rates import (
     get_binance_futures_symbols
 )
 
-def get_top_liquid_pairs() -> List[Dict[str, Any]]:
+def get_top_liquid_pairs(min_volume: float = MIN_24H_VOLUME_USD) -> List[Dict[str, Any]]:
     """
     Mengambil seluruh ticker 24 jam dan memfilter koin berlikuiditas tinggi
     serta mencatat kedalaman order book (bid vs ask)
@@ -88,7 +90,7 @@ def get_top_liquid_pairs() -> List[Dict[str, Any]]:
         except (ValueError, TypeError):
             continue
 
-        if quote_volume >= MIN_24H_VOLUME_USD and last_price > 0:
+        if quote_volume >= min_volume and last_price > 0:
             valid_pairs.append({
                 "symbol": symbol,
                 "quote_volume": quote_volume,
@@ -175,7 +177,7 @@ def get_daily_macro_trend(symbol: str) -> str:
     else:
         return "Downtrend"
 
-def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = None, timeframe: str = TIMEFRAME, funding_map: Dict[str, float] = None) -> Dict[str, Any]:
+def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = None, timeframe: str = TIMEFRAME, funding_map: Dict[str, float] = None, mode: str = "trend") -> Dict[str, Any]:
     """
     Menganalisis satu koin dengan multi-kondisi pasar kripto komprehensif:
     1. Tren Makro (EMA 200) & Retest (EMA 50)
@@ -191,12 +193,21 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
     11. Fase ATH/ATL & Proyeksi Matematika Fibonacci (1.618 & 2.618)
     12. Fair Value Gap (FVG Imbalance - Smart Money Concepts)
     13. Funding Rate Futures & Squeeze Risk Analysis
-    14. Manajemen Risiko Anti-Likuidasi & Rekomendasi Leverage Aman
+    14. Mode 2: Deteksi Akumulasi Paus Multi-Hari & Ledakan Pre-Pump 15m
+    15. Manajemen Risiko Anti-Likuidasi & Rekomendasi Leverage Aman
     """
     symbol = coin_meta["symbol"]
     df = get_klines_data(symbol, interval=timeframe)
     if len(df) < 50:
         return None
+
+    # Deteksi Pre-Pump / Whale Hunter jika Mode Pump aktif
+    pump_eval = None
+    if mode == "pump":
+        df_daily = get_klines_data(symbol, interval="1d", limit=30)
+        df_15m = df if timeframe == "15m" else get_klines_data(symbol, interval="15m", limit=30)
+        if not df_15m.empty:
+            pump_eval = detect_whale_accumulation_and_breakout(df_15m, df_daily=df_daily if not df_daily.empty else None)
 
     # 1. Kalkulasi Indikator Dasar & Lanjutan
     df['ema_200'] = calculate_ema(df['close'], period=min(200, len(df)))
@@ -326,12 +337,11 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
             score -= 15
             reasons.append(f"⚡ Order Book Dominan Jual ({100-bid_ratio:.0f}% Ask)")
 
-    # K. Faktor Rezim Pasar Bitcoin (BTC Macro Hard Filter)
-    if btc_status and symbol != "BTCUSDT":
+    # K. Faktor Rezim Pasar Bitcoin (BTC Macro Hard Filter - Berlaku pada Mode Trend)
+    if mode == "trend" and btc_status and symbol != "BTCUSDT":
         btc_trend = btc_status.get("trend")
         if btc_trend == "Downtrend":
             if score > 0:
-                # Saat BTC Downtrend, Long dilarang keras KECUALI ada konfirmasi reversal kuat
                 has_reversal = any("SFP" in r or "Divergence" in r for r in reasons)
                 if has_reversal and score >= 85:
                     score -= 15
@@ -354,6 +364,10 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
             else:
                 score += 20
                 reasons.append("🌊 Selaras Tren Makro BTC (Long Diunggulkan)")
+    elif mode == "pump" and btc_status and symbol != "BTCUSDT":
+        btc_trend = btc_status.get("trend")
+        if btc_trend == "Downtrend" and score > 0:
+            reasons.append("⚡ Anomali Independen (Melawan Arus BTC)")
 
     # L. Faktor ATH / ATL Breakout & Fibonacci Extension
     if ath_atl["score_impact"] != 0:
@@ -374,17 +388,29 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
             score += 20
             reasons.append(fr_eval["label"])
 
-    # O. Anti-FOMO & Anti-Capitulation Guardrails
+    # O. Penilaian Berdasarkan Mode (Mode Trend vs Mode Pre-Pump)
     price_change_24h = coin_meta.get("price_change_pct", 0)
-    if price_change_24h > 14.0 or rsi_val > 68:
-        if score > 0:
-            score -= 40
-        reasons.append("⛔ Anti-FOMO: Pucuk Pompa / Jenuh Beli (Dilarang Long)")
+    if mode == "trend":
+        if price_change_24h > 14.0 or rsi_val > 68:
+            if score > 0:
+                score -= 40
+            reasons.append("⛔ Anti-FOMO: Pucuk Pompa / Jenuh Beli (Dilarang Long)")
 
-    if price_change_24h < -18.0 and rsi_val < 28:
-        if score < 0:
-            score += 40
-        reasons.append("⚠️ Anti-Capitulation: Dasar Dump (Rawan Squeeze)")
+        if price_change_24h < -18.0 and rsi_val < 28:
+            if score < 0:
+                score += 40
+            reasons.append("⚠️ Anti-Capitulation: Dasar Dump (Rawan Squeeze)")
+    elif mode == "pump" and pump_eval:
+        if pump_eval.get("is_pump_setup"):
+            score = max(score, 0) + pump_eval["score"]
+            reasons.insert(0, pump_eval["label"])
+            for d in pump_eval.get("details", []):
+                reasons.append(d)
+        elif pump_eval.get("is_dump_setup"):
+            score = min(score, 0) + pump_eval["score"]
+            reasons.insert(0, pump_eval["label"])
+            for d in pump_eval.get("details", []):
+                reasons.append(d)
 
     # 3. Hitung Setup Eksekusi Cerdas (Institutional Swing Stop Loss)
     # Gunakan harga LIVE real-time saat ini dari ticker (bukan harga candle tutup sebelumnya)
@@ -572,12 +598,17 @@ def get_btc_macro_regime() -> Dict[str, Any]:
             "desc": f"Downtrend (<EMA200 di ${price:,.0f})"
         }
 
-def run_market_screener(timeframe: str = TIMEFRAME) -> Dict[str, Any]:
-    """Menjalankan pemindaian seluruh koin teratas dan menghasilkan Top 5 Long & Short"""
-    pairs = get_top_liquid_pairs()
+def run_market_screener(timeframe: str = TIMEFRAME, mode: str = "trend") -> Dict[str, Any]:
+    """
+    Menjalankan pemindaian pasar:
+    - Mode 'trend' (Trend Konservatif): Mengikuti rezim makro BTC, minim risiko.
+    - Mode 'pump'  (Pre-Pump & Whale Hunter): Mengabaikan BTC, deteksi koin tidur yang diakumulasi Paus & siap meledak.
+    """
+    min_vol = MIN_24H_VOLUME_USD if mode == "trend" else MIN_VOLUME_PREPUMP_USD
+    pairs = get_top_liquid_pairs(min_volume=min_vol)
     if not pairs:
         print("[Warning] Tidak ada koin yang berhasil ditarik.")
-        return {"longs": [], "shorts": [], "btc_status": {}, "total_scanned": 0, "timeframe": timeframe}
+        return {"longs": [], "shorts": [], "btc_status": {}, "total_scanned": 0, "timeframe": timeframe, "mode": mode}
 
     btc_status = get_btc_macro_regime()
     fear_greed = get_crypto_fear_and_greed()
@@ -586,31 +617,39 @@ def run_market_screener(timeframe: str = TIMEFRAME) -> Dict[str, Any]:
 
     results = []
     for p in pairs:
-        res = analyze_single_coin(p, btc_status=btc_status, timeframe=timeframe, funding_map=funding_map)
+        res = analyze_single_coin(p, btc_status=btc_status, timeframe=timeframe, funding_map=funding_map, mode=mode)
         if res:
             results.append(res)
 
     results.sort(key=lambda x: x["score"], reverse=True)
 
-    # Filter Kualitas Sinyal Berdasarkan Rezim Pasar Makro
-    btc_trend = btc_status.get("trend") if btc_status else "Neutral"
-    if btc_trend == "Downtrend":
-        # Saat BTC Downtrend: Blokir Long biasa, hanya izinkan Long jika skor sangat tinggi (>=75)
-        top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 75][:2]
-        top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -35]
-    elif btc_trend == "Uptrend":
-        # Saat BTC Uptrend: Blokir Short biasa, hanya izinkan Short jika skor sangat negatif (<=-75)
-        top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 35][:2]
-        top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -75]
+    if mode == "pump":
+        # Mode Pre-Pump / Whale Hunter: Memilih koin dengan potensi ledakan / akumulasi terbaik
+        top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 45][:2]
+        top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -45]
+        top_shorts.sort(key=lambda x: x["score"])
+        top_shorts = top_shorts[:2]
     else:
-        top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 40][:2]
-        top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -40]
+        # Filter Kualitas Sinyal Berdasarkan Rezim Pasar Makro
+        btc_trend = btc_status.get("trend") if btc_status else "Neutral"
+        if btc_trend == "Downtrend":
+            # Saat BTC Downtrend: Blokir Long biasa, hanya izinkan Long jika skor sangat tinggi (>=75)
+            top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 75][:2]
+            top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -35]
+        elif btc_trend == "Uptrend":
+            # Saat BTC Uptrend: Blokir Short biasa, hanya izinkan Short jika skor sangat negatif (<=-75)
+            top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 35][:2]
+            top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -75]
+        else:
+            top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 40][:2]
+            top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -40]
 
-    top_shorts.sort(key=lambda x: x["score"])
-    top_shorts = top_shorts[:2]
+        top_shorts.sort(key=lambda x: x["score"])
+        top_shorts = top_shorts[:2]
 
     return {
         "timeframe": timeframe,
+        "mode": mode,
         "btc_status": btc_status,
         "fear_greed": fear_greed,
         "macro_intel": macro_intel,
@@ -619,7 +658,7 @@ def run_market_screener(timeframe: str = TIMEFRAME) -> Dict[str, Any]:
         "total_scanned": len(results)
     }
 
-def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME) -> Dict[str, Any]:
+def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "trend") -> Dict[str, Any]:
     """
     Menganalisis satu koin spesifik secara langsung (On-Demand Single Coin Analysis).
     Mendukung input seperti 'DOS', 'DOGS', 'BTC', 'ETH' baik di Spot maupun Futures.
@@ -690,13 +729,14 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME) -> Dict[str, 
     macro_intel = get_fed_and_macro_intel()
     funding_map = get_all_funding_rates()
 
-    analysis = analyze_single_coin(coin_meta, btc_status=btc_status, timeframe=timeframe, funding_map=funding_map)
+    analysis = analyze_single_coin(coin_meta, btc_status=btc_status, timeframe=timeframe, funding_map=funding_map, mode=mode)
     if not analysis:
         # Jika score netral (0), buat data minimum
         return {}
 
     return {
         "timeframe": timeframe,
+        "mode": mode,
         "btc_status": btc_status,
         "fear_greed": fear_greed,
         "macro_intel": macro_intel,

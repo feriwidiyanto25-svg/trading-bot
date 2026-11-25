@@ -18,9 +18,16 @@ def format_telegram_message(data: dict) -> str:
     macro = data.get("macro_intel", {})
 
     tf = data.get("timeframe", "4h")
+    mode = data.get("mode", "trend")
 
-    msg = f"📊 *[RADAR PASAR CRYPTO - TF {tf.upper()}]*\n"
-    msg += f"🕒 {now} | Rezim BTC: *{btc.get('desc', 'N/A')}*\n"
+    if mode == "pump":
+        msg = f"🚀 *[RADAR PRE-PUMP / WHALE HUNTER - TF {tf.upper()}]*\n"
+        msg += f"🕒 {now} | Rezim BTC: *{btc.get('desc', 'N/A')}*\n"
+        msg += "⚡ _Mode Independen: Memburu Anomali Volume & Akumulasi Paus Multi-Hari_\n"
+    else:
+        msg = f"📊 *[RADAR PASAR CRYPTO - TF {tf.upper()}]*\n"
+        msg += f"🕒 {now} | Rezim BTC: *{btc.get('desc', 'N/A')}*\n"
+
     if fg:
         msg += f"😨 Sentiment: *{fg.get('value', 50)}/100* ({fg.get('classification', 'Neutral')})\n"
     if macro and macro.get("has_alert"):
@@ -30,7 +37,11 @@ def format_telegram_message(data: dict) -> str:
     msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
 
     # --- TOP 2 LONGS ---
-    msg += "🟢 *TOP 2 LONG SETUP (POTENSI NAIK)*\n"
+    if mode == "pump":
+        msg += "🟢 *KANDIDAT PRE-PUMP (POTENSI TERBANG TINGGI)*\n"
+    else:
+        msg += "🟢 *TOP 2 LONG SETUP (POTENSI NAIK)*\n"
+
     if longs:
         for i, c in enumerate(longs, 1):
             fvg_note = f" [{c['fvg_status']}]" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
@@ -45,15 +56,19 @@ def format_telegram_message(data: dict) -> str:
                 f"• 🐋 *Paus:* Dump `${c.get('whale_dump', '0.0')}` (-{c.get('whale_drop_pct', 0)}%) | Pump `${c.get('whale_pump', '0.0')}` (+{c.get('whale_pump_pct', 0)}%)\n"
             )
     else:
-        if btc.get("trend") == "Downtrend":
+        if mode == "trend" and btc.get("trend") == "Downtrend":
             msg += "   🛡️ *Veto Makro Aktif:* Sinyal LONG ditahan karena BTC Downtrend. Hindari beli altcoin saat pasar bleeding!\n"
         else:
-            msg += "   _Tidak ada koin Long yang memenuhi filter saat ini._\n"
+            msg += "   _Tidak ada koin yang memenuhi kriteria ledakan saat ini._\n"
 
     msg += "\n━━━━━━━━━━━━━━━━━━━━━\n\n"
 
     # --- TOP 2 SHORTS ---
-    msg += "🔴 *TOP 2 SHORT SETUP (POTENSI TURUN)*\n"
+    if mode == "pump":
+        msg += "🔴 *KANDIDAT PRE-DUMP (POTENSI TERJUN BEBAS)*\n"
+    else:
+        msg += "🔴 *TOP 2 SHORT SETUP (POTENSI TURUN)*\n"
+
     if shorts:
         for i, c in enumerate(shorts, 1):
             fvg_note = f" [{c['fvg_status']}]" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
@@ -68,18 +83,27 @@ def format_telegram_message(data: dict) -> str:
                 f"• 🐋 *Paus:* Dump `${c.get('whale_dump', '0.0')}` (-{c.get('whale_drop_pct', 0)}%) | Pump `${c.get('whale_pump', '0.0')}` (+{c.get('whale_pump_pct', 0)}%)\n"
             )
     else:
-        if btc.get("trend") == "Uptrend":
+        if mode == "trend" and btc.get("trend") == "Uptrend":
             msg += "   🛡️ *Veto Makro Aktif:* Sinyal SHORT ditahan karena BTC Uptrend. Hindari short altcoin saat pasar bullish!\n"
         else:
-            msg += "   _Tidak ada koin Short yang memenuhi filter saat ini._\n"
+            msg += "   _Tidak ada koin yang memenuhi kriteria dump saat ini._\n"
 
-    msg += (
-        "\n━━━━━━━━━━━━━━━━━━━━━\n"
-        "💡 *Tips Eksekusi Cerdas:*\n"
-        "• *Gunakan Trigger Order (Buy/Sell Stop)* untuk konfirmasi arah atau pasang Limit di *Retest Diskon*.\n"
-        "• *JANGAN Hajar Kanan (Market Order)* saat pasar volatil / Extreme Fear!\n"
-        "• Gunakan modal maks 20-30% saldo agar liq aman. Kunci profit di TP1 & geser SL ke BEP!"
-    )
+    if mode == "pump":
+        msg += (
+            "\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "💡 *Tips Eksekusi Mode Pre-Pump:*\n"
+            "• *WAJIB Gunakan Trigger Order (Buy Stop)* di atas harga Trigger. Order HANYA aktif jika pompaan benar-benar tembus resisten!\n"
+            "• Jangan Hajar Kanan (Market Order) agar tidak terjebak pompaan palsu.\n"
+            "• Capai TP 1 (+3% s/d +5%), langsung amankan profit & geser SL ke BEP (modal)!"
+        )
+    else:
+        msg += (
+            "\n━━━━━━━━━━━━━━━━━━━━━\n"
+            "💡 *Tips Eksekusi Cerdas:*\n"
+            "• *Gunakan Trigger Order (Buy/Sell Stop)* untuk konfirmasi arah atau pasang Limit di *Retest Diskon*.\n"
+            "• *JANGAN Hajar Kanan (Market Order)* saat pasar volatil / Extreme Fear!\n"
+            "• Gunakan modal maks 20-30% saldo agar liq aman. Kunci profit di TP1 & geser SL ke BEP!"
+        )
     return msg
 
 def print_terminal_report(data: dict):
