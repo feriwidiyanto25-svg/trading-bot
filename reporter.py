@@ -50,10 +50,11 @@ def format_telegram_message(data: dict) -> str:
         for i, c in enumerate(longs, 1):
             reasons_str = " + ".join(c['reasons'][:3])
             tp_info = c.get('tp_model', 'RRR Standard')
-            fvg_note = f"\n   • {c['fvg_status']}" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
+            fvg_line = f"   • {c['fvg_status']}\n" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
             msg += (
                 f"{i}. 🚀 *{c['symbol']}* (Skor: `+{c['score']}` | 1D: `{c.get('daily_trend')}`)\n"
-                f"   • Sinyal: _{reasons_str}_{fvg_note}\n"
+                f"   • Sinyal: _{reasons_str}_\n"
+                f"{fvg_line}"
                 f"   • Market Entry: `${c['entry_market']}`\n"
                 f"   • ⚡ Trigger Konfirmasi: `${c['trigger_entry']}` (Tembus Pucuk)\n"
                 f"   • 🎯 Retest Diskon: `${c['retest_entry']}`\n"
@@ -76,10 +77,11 @@ def format_telegram_message(data: dict) -> str:
         for i, c in enumerate(shorts, 1):
             reasons_str = " + ".join(c['reasons'][:3])
             tp_info = c.get('tp_model', 'RRR Standard')
-            fvg_note = f"\n   • {c['fvg_status']}" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
+            fvg_line = f"   • {c['fvg_status']}\n" if c.get('fvg_status') and c.get('fvg_status') != "-" else ""
             msg += (
                 f"{i}. 🔻 *{c['symbol']}* (Skor: `{c['score']}` | 1D: `{c.get('daily_trend')}`)\n"
-                f"   • Sinyal: _{reasons_str}_{fvg_note}\n"
+                f"   • Sinyal: _{reasons_str}_\n"
+                f"{fvg_line}"
                 f"   • Market Entry: `${c['entry_market']}`\n"
                 f"   • ⚡ Trigger Konfirmasi: `${c['trigger_entry']}` (Jebol Dasar)\n"
                 f"   • 🎯 Retest Diskon: `${c['retest_entry']}`\n"
@@ -207,7 +209,7 @@ def print_terminal_report(data: dict):
     print("="*118 + "\n")
 
 def send_telegram_alert(message: str) -> bool:
-    """Mengirim pesan teks ke bot Telegram jika kredensial diatur"""
+    """Mengirim pesan teks ke bot Telegram, otomatis memecah jika melebihi batas 4096 karakter Telegram"""
     if not TELEGRAM_BOT_TOKEN:
         print("[!] TELEGRAM_BOT_TOKEN kosong atau belum diatur di Secrets/Environment.")
         return False
@@ -216,26 +218,52 @@ def send_telegram_alert(message: str) -> bool:
         return False
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    try:
-        r = requests.post(url, json=payload, timeout=8)
-        if r.status_code == 200:
-            return True
-        else:
-            print(f"[!] Telegram API Error ({r.status_code}): {r.text}")
-            # Fallback jika ada karakter khusus markdown yang gagal di-parse oleh Telegram
-            if "can't parse entities" in r.text:
-                print("[i] Mencoba kirim ulang pesan dalam mode teks polos...")
+
+    # Telegram memiliki batas maksimal 4096 karakter per pesan.
+    # Jika pesan lebih dari 3500 karakter, pecah berdasarkan pemisah '━━━━━━━━━━━━━━━━━━━━━\n\n'
+    chunks = []
+    if len(message) <= 3800:
+        chunks.append(message)
+    else:
+        parts = message.split("━━━━━━━━━━━━━━━━━━━━━\n\n")
+        current_chunk = ""
+        for p in parts:
+            if len(current_chunk) + len(p) + 30 < 3800:
+                current_chunk += p + "━━━━━━━━━━━━━━━━━━━━━\n\n"
+            else:
+                if current_chunk:
+                    chunks.append(current_chunk.strip())
+                current_chunk = p + "━━━━━━━━━━━━━━━━━━━━━\n\n"
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+
+    all_success = True
+    for idx, chunk in enumerate(chunks, 1):
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": chunk, "parse_mode": "Markdown"}
+        try:
+            r = requests.post(url, json=payload, timeout=8)
+            if r.status_code == 200:
+                print(f"[+] Bagian {idx}/{len(chunks)} berhasil dikirim ke Telegram!")
+            else:
+                print(f"[!] Telegram API Error Bagian {idx} ({r.status_code}): {r.text}")
+                # Fallback jika ada format karakter khusus markdown yang gagal di-parse oleh Telegram
+                print(f"[i] Mencoba kirim ulang bagian {idx} dalam mode teks polos...")
                 payload_plain = {
                     "chat_id": TELEGRAM_CHAT_ID,
-                    "text": message.replace("*", "").replace("_", "").replace("`", "")
+                    "text": chunk.replace("*", "").replace("_", "").replace("`", "")
                 }
                 r_retry = requests.post(url, json=payload_plain, timeout=8)
-                return r_retry.status_code == 200
-            return False
-    except Exception as e:
-        print(f"[Warning] Gagal kirim Telegram: {e}")
-        return False
+                if r_retry.status_code == 200:
+                    print(f"[+] Bagian {idx} berhasil dikirim (mode teks polos)!")
+                else:
+                    print(f"[!] Gagal kirim ulang bagian {idx}: {r_retry.text}")
+                    all_success = False
+        except Exception as e:
+            print(f"[Warning] Gagal kirim Telegram: {e}")
+            all_success = False
+        time.sleep(0.5)
+
+    return all_success
 
 def save_to_json(data: dict, filepath: str = "signals_history.json"):
     """Menyimpan hasil ke file JSON agar bisa dianalisis kembali"""
