@@ -48,10 +48,20 @@ from funding_rates import (
     get_binance_futures_symbols
 )
 
-def get_top_liquid_pairs(min_volume: float = MIN_24H_VOLUME_USD) -> List[Dict[str, Any]]:
+MEGA_CAPS = {
+    "BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", 
+    "ADAUSDT", "TRXUSDT", "AVAXUSDT", "DOTUSDT", "LINKUSDT", "LTCUSDT", 
+    "SUIUSDT", "NEARUSDT", "BCHUSDT", "ETCUSDT", "XLMUSDT", "SHIBUSDT"
+}
+
+def get_top_liquid_pairs(min_volume: float = MIN_24H_VOLUME_USD, mode: str = "trend") -> List[Dict[str, Any]]:
     """
-    Mengambil seluruh ticker 24 jam dan memfilter koin berlikuiditas tinggi
-    serta mencatat kedalaman order book (bid vs ask)
+    Mengambil seluruh ticker 24 jam dan memfilter koin berlikuiditas tinggi:
+    - Mode Trend: Mengambil koin teratas berbasis volume transaksi dan likuiditas tinggi.
+    - Mode Pump: KHUSUS memburu koin tidur (Mid/Low Cap) yang belum terbang:
+      1. Menyingkirkan koin raksasa (Mega-Caps: BTC, SOL, DOGE, dll).
+      2. Menyingkirkan koin yang sudah terbang tinggi (price change 24h > 5%).
+      3. Menyaring koin tidur di rentang -7% s/d +4% dengan likuiditas $1M s/d $60M.
     """
     url = f"{BINANCE_BASE_URL}/ticker/24hr"
     try:
@@ -65,7 +75,8 @@ def get_top_liquid_pairs(min_volume: float = MIN_24H_VOLUME_USD) -> List[Dict[st
     valid_pairs = []
     excluded_coins = {
         "USDCUSDT", "FDUSDUSDT", "TUSDUSDT", "BUSDUSDT", "EURUSDT", "DAIUSDT", 
-        "UUSDT", "USDUSDT", "AEURUSDT", "USDPUSDT", "WBTCUSDT", "USD1USDT"
+        "UUSDT", "USDUSDT", "AEURUSDT", "USDPUSDT", "WBTCUSDT", "USD1USDT",
+        "BFUSDUSDT", "RWUSDUSDT", "XUSDUSDT", "RLUSDUSDT", "EURIUSDT", "USDEUSDT"
     }
 
     # Ambil daftar koin Binance Futures agar hanya menyaring koin yang ada di Futures
@@ -100,6 +111,24 @@ def get_top_liquid_pairs(min_volume: float = MIN_24H_VOLUME_USD) -> List[Dict[st
                 "bid_qty": bid_qty,
                 "ask_qty": ask_qty
             })
+
+    if mode == "pump":
+        sleeping_pairs = []
+        for p in valid_pairs:
+            sym = p["symbol"]
+            chg = p["price_change_pct"]
+            q_vol = p["quote_volume"]
+            if sym in MEGA_CAPS:
+                continue
+            if chg > 5.0:
+                continue
+            if not (-8.0 <= chg <= 4.0):
+                continue
+            if 1_000_000 <= q_vol <= 60_000_000:
+                sleeping_pairs.append(p)
+        
+        sleeping_pairs.sort(key=lambda x: (abs(x["price_change_pct"]), -x["quote_volume"]))
+        return sleeping_pairs[:MAX_PAIRS_TO_ANALYZE]
 
     # 1. Ambil koin dengan volume transaksi terbesar
     by_volume = sorted(valid_pairs, key=lambda x: x["quote_volume"], reverse=True)[:MAX_PAIRS_TO_ANALYZE]
@@ -606,7 +635,7 @@ def run_market_screener(timeframe: str = TIMEFRAME, mode: str = "trend") -> Dict
     - Mode 'pump'  (Pre-Pump & Whale Hunter): Mengabaikan BTC, deteksi koin tidur yang diakumulasi Paus & siap meledak.
     """
     min_vol = MIN_24H_VOLUME_USD if mode == "trend" else MIN_VOLUME_PREPUMP_USD
-    pairs = get_top_liquid_pairs(min_volume=min_vol)
+    pairs = get_top_liquid_pairs(min_volume=min_vol, mode=mode)
     if not pairs:
         print("[Warning] Tidak ada koin yang berhasil ditarik.")
         return {"longs": [], "shorts": [], "btc_status": {}, "total_scanned": 0, "timeframe": timeframe, "mode": mode}
@@ -625,11 +654,11 @@ def run_market_screener(timeframe: str = TIMEFRAME, mode: str = "trend") -> Dict
     results.sort(key=lambda x: x["score"], reverse=True)
 
     if mode == "pump":
-        # Mode Pre-Pump / Whale Hunter: Memilih koin dengan potensi ledakan / akumulasi terbaik
-        top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 45][:2]
-        top_shorts = [r for r in results if r["direction"] == "SHORT" and r["score"] <= -45]
-        top_shorts.sort(key=lambda x: x["score"])
-        top_shorts = top_shorts[:2]
+        # Mode Pre-Pump: Koin tidur (Mid/Low Cap) di area support yang siap terbang
+        top_longs = [r for r in results if r["direction"] == "LONG" and r["score"] >= 25][:3]
+        if not top_longs:
+            top_longs = [r for r in results if r["direction"] == "LONG"][:2]
+        top_shorts = []
     else:
         # Filter Kualitas Sinyal Berdasarkan Rezim Pasar Makro
         btc_trend = btc_status.get("trend") if btc_status else "Neutral"

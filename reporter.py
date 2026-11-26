@@ -64,9 +64,15 @@ def format_telegram_message(data: dict) -> str:
         btc = data.get("btc_status", {})
         fg = data.get("fear_greed", {})
 
-        mode_title = "RADAR PRE-PUMP" if mode == "pump" else "RADAR PASAR"
-        msg = f"📊 *[{mode_title} - TF {tf.upper()}]*\n"
-        msg += f"🕒 {now} | BTC: *{btc.get('desc', 'N/A')}*\n"
+        if mode == "pump":
+            mode_title = "RADAR KOIN TIDUR (PRE-PUMP)"
+            msg = f"📊 *[{mode_title} - TF {tf.upper()}]*\n"
+            msg += "💡 *Fokus:* Koin Mid/Low Cap di Area Support (Belum Terbang)\n"
+            msg += f"🕒 {now} | BTC: *{btc.get('desc', 'N/A')}*\n"
+        else:
+            mode_title = "RADAR PASAR"
+            msg = f"📊 *[{mode_title} - TF {tf.upper()}]*\n"
+            msg += f"🕒 {now} | BTC: *{btc.get('desc', 'N/A')}*\n"
         if fg:
             msg += f"😨 Sentiment: *{fg.get('value', 50)}/100* ({fg.get('classification', 'Neutral')})\n"
         msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -148,7 +154,7 @@ def print_terminal_report(data: dict):
         fg = data.get("fear_greed", {})
 
         print("\n" + "="*70)
-        title = "RADAR PRE-PUMP" if mode == "pump" else "RADAR PASAR"
+        title = "RADAR KOIN TIDUR / PRE-PUMP (Mid/Low Cap)" if mode == "pump" else "RADAR PASAR"
         print(f"📊 [{title}]  Waktu: {datetime.datetime.now().strftime('%d %b %H:%M WIB')}")
         if btc:
             print(f"Rezim BTC: {btc.get('desc', 'N/A')} | Sentimen: {fg.get('value', 50)}/100")
