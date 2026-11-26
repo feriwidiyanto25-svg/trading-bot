@@ -827,23 +827,55 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "
         elif val < 10.0: return f"{val:.4f}".rstrip("0").rstrip(".")
         else: return f"{val:.2f}"
 
-    # 6. SETUP LONG
-    long_entry_low = max(swing_low_15m, curr_price - (0.7 * atr_15m))
-    long_entry_high = curr_price + (0.3 * atr_15m)
-    long_sl = min(swing_low_15m - (0.25 * atr_15m), curr_price * 0.975)
-    long_risk = curr_price - long_sl
-    long_risk_pct = (long_risk / curr_price) * 100
-    long_tp1 = curr_price + (1.5 * long_risk)
-    long_tp2 = max(swing_high_4h, curr_price + (2.5 * long_risk))
+    # 6. SETUP LONG BERBASIS SUPPORT & PULLBACK
+    key_supp_long = swing_low_4h if swing_low_4h > 0 else (curr_price * 0.95)
+    if curr_price < key_supp_long:
+        key_supp_long = min(curr_price * 0.98, swing_low_15m)
+    
+    dist_supp_pct = ((curr_price - key_supp_long) / key_supp_long) * 100 if key_supp_long > 0 else 0
 
-    # 7. SETUP SHORT
-    short_entry_low = curr_price - (0.3 * atr_15m)
-    short_entry_high = min(swing_high_15m + (0.5 * atr_15m), curr_price + (0.7 * atr_15m))
-    short_sl = max(swing_high_15m + (0.25 * atr_15m), curr_price * 1.025)
-    short_risk = short_sl - curr_price
-    short_risk_pct = (short_risk / curr_price) * 100
-    short_tp1 = curr_price - (1.5 * short_risk)
-    short_tp2 = min(swing_low_4h, curr_price - (2.5 * short_risk))
+    if dist_supp_pct <= 2.0:
+        long_status = f"✅ Dekat Support (${_fmt(key_supp_long)})"
+        long_entry_low = max(key_supp_long, curr_price - (0.5 * atr_15m))
+        long_entry_high = curr_price + (0.2 * atr_15m)
+        long_sl = key_supp_long - (0.3 * atr_15m)
+    else:
+        long_status = f"⚠️ Tunggu Koreksi (+{dist_supp_pct:.1f}% dr Supp ${_fmt(key_supp_long)})"
+        move_up = curr_price - key_supp_long
+        long_entry_low = key_supp_long + (0.15 * move_up)
+        long_entry_high = key_supp_long + (0.50 * move_up)
+        long_sl = key_supp_long - (0.25 * atr_15m)
+
+    long_mid_entry = (long_entry_low + long_entry_high) / 2
+    long_risk = max(long_mid_entry - long_sl, long_mid_entry * 0.015)
+    long_risk_pct = (long_risk / long_mid_entry) * 100
+    long_tp1 = long_mid_entry + (1.5 * long_risk)
+    long_tp2 = max(swing_high_4h, long_mid_entry + (2.5 * long_risk))
+
+    # 7. SETUP SHORT BERBASIS RESISTENSI & PULLBACK
+    key_res_short = swing_high_4h if swing_high_4h > 0 else (curr_price * 1.05)
+    if curr_price > key_res_short:
+        key_res_short = max(curr_price * 1.02, swing_high_15m)
+
+    dist_res_pct = ((key_res_short - curr_price) / key_res_short) * 100 if key_res_short > 0 else 0
+
+    if dist_res_pct <= 2.0:
+        short_status = f"✅ Dekat Resistensi (${_fmt(key_res_short)})"
+        short_entry_low = curr_price - (0.2 * atr_15m)
+        short_entry_high = min(key_res_short, curr_price + (0.5 * atr_15m))
+        short_sl = key_res_short + (0.3 * atr_15m)
+    else:
+        short_status = f"⚠️ Tunggu Pantulan (-{dist_res_pct:.1f}% dr Res ${_fmt(key_res_short)})"
+        move_down = key_res_short - curr_price
+        short_entry_low = key_res_short - (0.50 * move_down)
+        short_entry_high = key_res_short - (0.15 * move_down)
+        short_sl = key_res_short + (0.25 * atr_15m)
+
+    short_mid_entry = (short_entry_low + short_entry_high) / 2
+    short_risk = max(short_sl - short_mid_entry, short_mid_entry * 0.015)
+    short_risk_pct = (short_risk / short_mid_entry) * 100
+    short_tp1 = short_mid_entry - (1.5 * short_risk)
+    short_tp2 = min(swing_low_4h, short_mid_entry - (2.5 * short_risk))
 
     # 8. Token Intel
     token_intel = get_token_fundamental_intel(clean_sym)
@@ -889,20 +921,22 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "
             }
         },
         "setup_long": {
+            "status": long_status,
             "entry_range": f"${_fmt(long_entry_low)} - ${_fmt(long_entry_high)}",
             "sl": f"${_fmt(long_sl)} (-{long_risk_pct:.2f}%)",
-            "tp1": f"${_fmt(long_tp1)} (+{((long_tp1-curr_price)/curr_price)*100:.2f}%)",
-            "tp2": f"${_fmt(long_tp2)} (+{((long_tp2-curr_price)/curr_price)*100:.2f}%)",
-            "rr_tp1": f"1 : {((long_tp1-curr_price)/long_risk):.1f}",
-            "rr_tp2": f"1 : {((long_tp2-curr_price)/long_risk):.1f}"
+            "tp1": f"${_fmt(long_tp1)} (+{((long_tp1-long_mid_entry)/long_mid_entry)*100:.2f}%)",
+            "tp2": f"${_fmt(long_tp2)} (+{((long_tp2-long_mid_entry)/long_mid_entry)*100:.2f}%)",
+            "rr_tp1": f"1 : {((long_tp1-long_mid_entry)/long_risk):.1f}",
+            "rr_tp2": f"1 : {((long_tp2-long_mid_entry)/long_risk):.1f}"
         },
         "setup_short": {
+            "status": short_status,
             "entry_range": f"${_fmt(short_entry_low)} - ${_fmt(short_entry_high)}",
             "sl": f"${_fmt(short_sl)} (+{short_risk_pct:.2f}%)",
-            "tp1": f"${_fmt(short_tp1)} (-{((curr_price-short_tp1)/curr_price)*100:.2f}%)",
-            "tp2": f"${_fmt(short_tp2)} (-{((curr_price-short_tp2)/curr_price)*100:.2f}%)",
-            "rr_tp1": f"1 : {((curr_price-short_tp1)/short_risk):.1f}",
-            "rr_tp2": f"1 : {((curr_price-short_tp2)/short_risk):.1f}"
+            "tp1": f"${_fmt(short_tp1)} (-{((short_mid_entry-short_tp1)/short_mid_entry)*100:.2f}%)",
+            "tp2": f"${_fmt(short_tp2)} (-{((short_mid_entry-short_tp2)/short_mid_entry)*100:.2f}%)",
+            "rr_tp1": f"1 : {((short_mid_entry-short_tp1)/short_risk):.1f}",
+            "rr_tp2": f"1 : {((short_mid_entry-short_tp2)/short_risk):.1f}"
         },
         "token_intel": token_intel,
         "total_scanned": 1

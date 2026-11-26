@@ -35,14 +35,18 @@ def format_telegram_message(data: dict) -> str:
         msg += f"• 15m: Pantul `${m15.get('bounce_point')}` (RSI {m15.get('rsi', 50):.0f})\n\n"
 
         msg += "🟢 *SETUP LONG:*\n"
-        msg += f"• Entry: `{s_long.get('entry_range')}`\n"
-        msg += f"• SL   : `{s_long.get('sl')}`\n"
-        msg += f"• TP 1 : `{s_long.get('tp1')}` | TP 2: `{s_long.get('tp2')}`\n\n"
+        if s_long.get("status"):
+            msg += f"• Status: *{s_long.get('status')}*\n"
+        msg += f"• Entry : `{s_long.get('entry_range')}`\n"
+        msg += f"• SL    : `{s_long.get('sl')}`\n"
+        msg += f"• TP 1  : `{s_long.get('tp1')}` | TP 2: `{s_long.get('tp2')}`\n\n"
 
         msg += "🔴 *SETUP SHORT:*\n"
-        msg += f"• Entry: `{s_short.get('entry_range')}`\n"
-        msg += f"• SL   : `{s_short.get('sl')}`\n"
-        msg += f"• TP 1 : `{s_short.get('tp1')}` | TP 2: `{s_short.get('tp2')}`\n\n"
+        if s_short.get("status"):
+            msg += f"• Status: *{s_short.get('status')}*\n"
+        msg += f"• Entry : `{s_short.get('entry_range')}`\n"
+        msg += f"• SL    : `{s_short.get('sl')}`\n"
+        msg += f"• TP 1  : `{s_short.get('tp1')}` | TP 2: `{s_short.get('tp2')}`\n\n"
 
         msg += "📌 *Info:* "
         notes = []
@@ -83,8 +87,12 @@ def format_telegram_message(data: dict) -> str:
             msg += f"🪙 *{idx}. {sym}* (*${price}*) | {bias.get('setup_type', '')}\n"
             msg += f"🎯 *Bias:* 🟢 Long *{bias.get('prob_long', 50)}%* vs 🔴 Short *{bias.get('prob_short', 50)}%*\n"
             msg += f"• 1D: {d1.get('trend')} (RSI {d1.get('rsi', 50):.0f}) | 4H: Res `${h4.get('resist')}`\n"
-            msg += f"🟢 *LONG* : Entry `{s_long.get('entry_range')}` | SL `{s_long.get('sl')}` | TP `{s_long.get('tp1')}`\n"
-            msg += f"🔴 *SHORT*: Entry `{s_short.get('entry_range')}` | SL `{s_short.get('sl')}` | TP `{s_short.get('tp1')}`\n"
+            msg += f"🟢 *LONG* : `{s_long.get('entry_range')}` | SL `{s_long.get('sl')}` | TP `{s_long.get('tp1')}`\n"
+            if "Tunggu" in s_long.get("status", ""):
+                msg += f"   _{s_long.get('status')}_\n"
+            msg += f"🔴 *SHORT*: `{s_short.get('entry_range')}` | SL `{s_short.get('sl')}` | TP `{s_short.get('tp1')}`\n"
+            if "Tunggu" in s_short.get("status", ""):
+                msg += f"   _{s_short.get('status')}_\n"
 
             info_line = []
             if intel.get("unlock_note"):
@@ -119,8 +127,10 @@ def print_terminal_report(data: dict):
         m15 = mtf.get("15m", {})
         print(f"• 1D: {d1.get('trend')} (RSI {d1.get('rsi', 50):.0f}) | 4H: Supp ${h4.get('support')} Res ${h4.get('resist')} | 15m: Pantul ${m15.get('bounce_point')}")
         print("-" * 70)
-        print(f"🟢 SETUP LONG  : Entry {s_long.get('entry_range')} | SL {s_long.get('sl')} | TP1 {s_long.get('tp1')} | TP2 {s_long.get('tp2')}")
-        print(f"🔴 SETUP SHORT : Entry {s_short.get('entry_range')} | SL {s_short.get('sl')} | TP1 {s_short.get('tp1')} | TP2 {s_short.get('tp2')}")
+        print(f"🟢 SETUP LONG  [{s_long.get('status', '-')}]")
+        print(f"   Entry: {s_long.get('entry_range')} | SL: {s_long.get('sl')} | TP1: {s_long.get('tp1')} | TP2: {s_long.get('tp2')}")
+        print(f"🔴 SETUP SHORT [{s_short.get('status', '-')}]")
+        print(f"   Entry: {s_short.get('entry_range')} | SL: {s_short.get('sl')} | TP1: {s_short.get('tp1')} | TP2: {s_short.get('tp2')}")
         print("-" * 70)
         notes = []
         if intel.get("unlock_note"):
