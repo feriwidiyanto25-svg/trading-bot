@@ -21,6 +21,7 @@ from config import (
     RRR_TP1,
     RRR_TP2
 )
+from token_intel import get_token_fundamental_intel
 from indicators import (
     calculate_ema,
     calculate_sma,
@@ -660,88 +661,222 @@ def run_market_screener(timeframe: str = TIMEFRAME, mode: str = "trend") -> Dict
 
 def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "trend") -> Dict[str, Any]:
     """
-    Menganalisis satu koin spesifik secara langsung (On-Demand Single Coin Analysis).
-    Mendukung input seperti 'DOS', 'DOGS', 'BTC', 'ETH' baik di Spot maupun Futures.
+    Menganalisis satu koin spesifik secara komprehensif menggunakan:
+    1. Triple Screen Multi-Timeframe: 1D (Arus Laut) ➔ 4H (Ombak) ➔ 15M (Sniper)
+    2. Bi-Directional Setups: 🟢 Setup LONG & 🔴 Setup SHORT (Zona Entry, SL, TP1, TP2, RRR)
+    3. Persentase Rekomendasi Probabilitas: Potensi Long X% vs Potensi Short Y%
+    4. Sentinel Fundamental: Token Unlock (> 1% suplai) & Isu Keamanan
     """
     clean_sym = symbol.upper().strip()
     if not clean_sym.endswith(QUOTE_ASSET):
         clean_sym += QUOTE_ASSET
 
-    t = None
-    # 1. Coba Binance Vision (Spot)
-    try:
-        url = f"{BINANCE_BASE_URL}/ticker/24hr"
-        res = requests.get(url, params={"symbol": clean_sym}, timeout=4)
-        if res.status_code == 200:
-            data_raw = res.json()
-            if isinstance(data_raw, dict) and "lastPrice" in data_raw:
-                t = data_raw
-    except Exception:
-        pass
+    # 1. Ambil data klines untuk 3 Timeframe (1D, 4H, 15m)
+    df_1d = get_klines_data(clean_sym, interval="1d", limit=60)
+    df_4h = get_klines_data(clean_sym, interval="4h", limit=60)
+    df_15m = get_klines_data(clean_sym, interval="15m", limit=60)
 
-    # 2. Coba Binance Futures FAPI (Berjalan di GitHub Actions / non-ID IP)
-    if not t:
-        try:
-            furl = "https://fapi.binance.com/fapi/v1/ticker/24hr"
-            res = requests.get(furl, params={"symbol": clean_sym}, timeout=3)
-            if res.status_code == 200:
-                data_raw = res.json()
-                if isinstance(data_raw, dict) and "lastPrice" in data_raw:
-                    t = data_raw
-        except Exception:
-            pass
-
-    # 3. Fallback jika koin Futures-Only dan diakses dari IP lokal (misal DOS_USDT via Gate.io)
-    if not t:
-        try:
-            gate_sym = clean_sym.replace("USDT", "_USDT")
-            gurl = f"https://api.gateio.ws/api/v4/spot/tickers?currency_pair={gate_sym}"
-            res = requests.get(gurl, timeout=5)
-            if res.status_code == 200:
-                gdata = res.json()
-                if gdata and isinstance(gdata, list):
-                    item = gdata[0]
-                    t = {
-                        "quoteVolume": float(item.get("quote_volume", 0)),
-                        "priceChangePercent": float(item.get("change_percentage", 0)),
-                        "lastPrice": float(item.get("last", 0)),
-                        "bidQty": float(item.get("highest_size", 0)),
-                        "askQty": float(item.get("lowest_size", 0))
-                    }
-        except Exception:
-            pass
-
-    if not t or "lastPrice" not in t or float(t.get("lastPrice", 0)) <= 0:
-        print(f"[Error] Gagal mengambil ticker untuk {clean_sym}")
+    if df_15m.empty or len(df_15m) < 15:
+        print(f"[Error] Data klines tidak mencukupi untuk {clean_sym}")
         return {}
 
-    coin_meta = {
-        "symbol": clean_sym,
-        "quote_volume": float(t.get("quoteVolume", 0)),
-        "price_change_pct": float(t.get("priceChangePercent", 0)),
-        "last_price": float(t.get("lastPrice", 0)),
-        "bid_qty": float(t.get("bidQty", 0)),
-        "ask_qty": float(t.get("askQty", 0))
-    }
+    # Hitung indikator untuk tiap timeframe
+    for df in [df_1d, df_4h, df_15m]:
+        if not df.empty and len(df) >= 14:
+            df['ema20'] = calculate_ema(df['close'], period=min(20, len(df)))
+            df['ema50'] = calculate_ema(df['close'], period=min(50, len(df)))
+            df['ema200'] = calculate_ema(df['close'], period=min(200, len(df)))
+            df['rsi'] = calculate_rsi(df['close'], period=14)
+            df['atr'] = calculate_atr(df['high'], df['low'], df['close'], period=14)
+
+    curr_price = float(df_15m['close'].iloc[-1])
+    atr_15m = float(df_15m['atr'].iloc[-1]) if 'atr' in df_15m.columns and pd.notna(df_15m['atr'].iloc[-1]) else curr_price * 0.015
+    if atr_15m <= 0:
+        atr_15m = curr_price * 0.015
+
+    # 2. Rangkuman 1D (Harian)
+    if not df_1d.empty and len(df_1d) >= 14:
+        close_1d = float(df_1d['close'].iloc[-1])
+        ema20_1d = float(df_1d['ema20'].iloc[-1])
+        rsi_1d = float(df_1d['rsi'].iloc[-1])
+        vol_1d = float(df_1d['volume'].iloc[-1])
+        vol_avg_1d = float(df_1d['volume'].tail(10).mean())
+        trend_1d_bull = close_1d > ema20_1d
+        trend_1d_desc = "Uptrend (>EMA20)" if trend_1d_bull else "Downtrend (<EMA20)"
+        is_selling_climax = (vol_1d >= 1.8 * vol_avg_1d) and (close_1d < df_1d['open'].iloc[-1])
+        climax_note = " | Vol: Selling Climax" if is_selling_climax else ""
+    else:
+        close_1d = curr_price
+        ema20_1d = curr_price
+        rsi_1d = 50.0
+        trend_1d_bull = True
+        trend_1d_desc = "Netral"
+        climax_note = ""
+
+    # 3. Rangkuman 4H (4 Jam)
+    if not df_4h.empty and len(df_4h) >= 14:
+        close_4h = float(df_4h['close'].iloc[-1])
+        ema20_4h = float(df_4h['ema20'].iloc[-1])
+        rsi_4h = float(df_4h['rsi'].iloc[-1])
+        trend_4h_bull = close_4h > ema20_4h
+        trend_4h_desc = "Uptrend (>EMA20)" if trend_4h_bull else "Downtrend (<EMA20)"
+        swing_low_4h = float(df_4h['low'].tail(15).min())
+        swing_high_4h = float(df_4h['high'].tail(15).max())
+    else:
+        close_4h = curr_price
+        ema20_4h = curr_price
+        rsi_4h = 50.0
+        trend_4h_bull = True
+        trend_4h_desc = "Netral"
+        swing_low_4h = curr_price * 0.95
+        swing_high_4h = curr_price * 1.05
+
+    # 4. Rangkuman 15m (Sniper)
+    rsi_15m = float(df_15m['rsi'].iloc[-1])
+    swing_low_15m = float(df_15m['low'].tail(10).min())
+    swing_high_15m = float(df_15m['high'].tail(10).max())
+    
+    last_15m = df_15m.iloc[-1]
+    c_tot = last_15m['high'] - last_15m['low']
+    wick_bwh_pct = ((min(last_15m['open'], last_15m['close']) - last_15m['low']) / c_tot * 100) if c_tot > 0 else 0
+    wick_atas_pct = ((last_15m['high'] - max(last_15m['open'], last_15m['close'])) / c_tot * 100) if c_tot > 0 else 0
+    vol_ratio_15m = float(last_15m['volume'] / df_15m['volume'].tail(10).mean()) if df_15m['volume'].tail(10).mean() > 0 else 1.0
+    is_green_15m = last_15m['close'] >= last_15m['open']
+
+    # 5. Hitung Probabilitas Kekuatan (Bias Long vs Short)
+    long_pts = 0
+    short_pts = 0
+
+    if trend_1d_bull:
+        long_pts += 15
+    else:
+        short_pts += 15
+    if rsi_1d < 25:
+        long_pts += 12
+    elif rsi_1d > 75:
+        short_pts += 12
+
+    if trend_4h_bull:
+        long_pts += 15
+    else:
+        short_pts += 15
+    if rsi_4h < 25:
+        long_pts += 10
+    elif rsi_4h > 75:
+        short_pts += 10
+
+    if wick_bwh_pct >= 45:
+        long_pts += 15
+    elif wick_atas_pct >= 45:
+        short_pts += 15
+
+    if vol_ratio_15m >= 1.5:
+        if is_green_15m:
+            long_pts += 10
+        else:
+            short_pts += 10
+
+    diff = long_pts - short_pts
+    shift = max(min(diff, 35), -35)
+    prob_long = int(50 + shift)
+    prob_short = 100 - prob_long
+
+    # Visual Bar
+    green_blocks = int(round(prob_long / 10))
+    white_blocks = 10 - green_blocks
+    bar_str = ("🟩" * green_blocks) + ("⬜" * white_blocks)
+
+    if prob_long >= 55:
+        conclusion = "Peluang lebih condong ke LONG (Pantulan Jenuh Jual / Momentum Beli)"
+    elif prob_short >= 55:
+        conclusion = "Peluang lebih condong ke SHORT (Tekanan Jual / Penolakan Resistensi)"
+    else:
+        conclusion = "Kekuatan Seimbang 50-50 (Pasar Sideways / Menunggu Konfirmasi Breakout)"
+
+    # Helper format price
+    def _fmt(val: float) -> str:
+        if val <= 0: return "0.0"
+        if val < 0.0001: return f"{val:.8f}".rstrip("0").rstrip(".")
+        elif val < 1.0: return f"{val:.6f}".rstrip("0").rstrip(".")
+        elif val < 10.0: return f"{val:.4f}".rstrip("0").rstrip(".")
+        else: return f"{val:.2f}"
+
+    # 6. SETUP LONG
+    long_entry_low = max(swing_low_15m, curr_price - (0.7 * atr_15m))
+    long_entry_high = curr_price + (0.3 * atr_15m)
+    long_sl = min(swing_low_15m - (0.25 * atr_15m), curr_price * 0.975)
+    long_risk = curr_price - long_sl
+    long_risk_pct = (long_risk / curr_price) * 100
+    long_tp1 = curr_price + (1.5 * long_risk)
+    long_tp2 = max(swing_high_4h, curr_price + (2.5 * long_risk))
+
+    # 7. SETUP SHORT
+    short_entry_low = curr_price - (0.3 * atr_15m)
+    short_entry_high = min(swing_high_15m + (0.5 * atr_15m), curr_price + (0.7 * atr_15m))
+    short_sl = max(swing_high_15m + (0.25 * atr_15m), curr_price * 1.025)
+    short_risk = short_sl - curr_price
+    short_risk_pct = (short_risk / curr_price) * 100
+    short_tp1 = curr_price - (1.5 * short_risk)
+    short_tp2 = min(swing_low_4h, curr_price - (2.5 * short_risk))
+
+    # 8. Token Intel
+    token_intel = get_token_fundamental_intel(clean_sym)
 
     btc_status = get_btc_macro_regime()
     fear_greed = get_crypto_fear_and_greed()
     macro_intel = get_fed_and_macro_intel()
-    funding_map = get_all_funding_rates()
-
-    analysis = analyze_single_coin(coin_meta, btc_status=btc_status, timeframe=timeframe, funding_map=funding_map, mode=mode)
-    if not analysis:
-        # Jika score netral (0), buat data minimum
-        return {}
 
     return {
+        "is_mtf_check": True,
+        "symbol": clean_sym,
         "timeframe": timeframe,
         "mode": mode,
+        "curr_price": curr_price,
+        "curr_price_str": _fmt(curr_price),
         "btc_status": btc_status,
         "fear_greed": fear_greed,
         "macro_intel": macro_intel,
-        "longs": [analysis] if analysis["direction"] == "LONG" else [],
-        "shorts": [analysis] if analysis["direction"] == "SHORT" else [],
-        "total_scanned": 1,
-        "single_coin": analysis
+        "bias": {
+            "prob_long": prob_long,
+            "prob_short": prob_short,
+            "bar": bar_str,
+            "conclusion": conclusion
+        },
+        "mtf": {
+            "1d": {
+                "trend": trend_1d_desc,
+                "rsi": rsi_1d,
+                "ema20": _fmt(ema20_1d),
+                "climax": climax_note
+            },
+            "4h": {
+                "trend": trend_4h_desc,
+                "rsi": rsi_4h,
+                "support": _fmt(swing_low_4h),
+                "resist": _fmt(swing_high_4h)
+            },
+            "15m": {
+                "rsi": rsi_15m,
+                "bounce_point": _fmt(swing_low_15m),
+                "risk_pct": long_risk_pct
+            }
+        },
+        "setup_long": {
+            "entry_range": f"${_fmt(long_entry_low)} - ${_fmt(long_entry_high)}",
+            "sl": f"${_fmt(long_sl)} (-{long_risk_pct:.2f}%)",
+            "tp1": f"${_fmt(long_tp1)} (+{((long_tp1-curr_price)/curr_price)*100:.2f}%)",
+            "tp2": f"${_fmt(long_tp2)} (+{((long_tp2-curr_price)/curr_price)*100:.2f}%)",
+            "rr_tp1": f"1 : {((long_tp1-curr_price)/long_risk):.1f}",
+            "rr_tp2": f"1 : {((long_tp2-curr_price)/long_risk):.1f}"
+        },
+        "setup_short": {
+            "entry_range": f"${_fmt(short_entry_low)} - ${_fmt(short_entry_high)}",
+            "sl": f"${_fmt(short_sl)} (+{short_risk_pct:.2f}%)",
+            "tp1": f"${_fmt(short_tp1)} (-{((curr_price-short_tp1)/curr_price)*100:.2f}%)",
+            "tp2": f"${_fmt(short_tp2)} (-{((curr_price-short_tp2)/curr_price)*100:.2f}%)",
+            "rr_tp1": f"1 : {((curr_price-short_tp1)/short_risk):.1f}",
+            "rr_tp2": f"1 : {((curr_price-short_tp2)/short_risk):.1f}"
+        },
+        "token_intel": token_intel,
+        "total_scanned": 1
     }

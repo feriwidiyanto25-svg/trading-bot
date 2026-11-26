@@ -196,7 +196,7 @@ export default {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 chat_id: chatId,
-                text: `🔍 *Memulai Analisis ${targetSym}USDT (Timeframe ${targetTf})...*\nLaporan lengkap akan langsung dikirim ke sini sebentar lagi.`,
+                text: `🔍 *Memulai Analisis ${targetSym}USDT (Triple Screen 1D ➔ 4H ➔ 15M)...*\nMenghitung probabilitas arah, Setup Long, Setup Short, & cek Unlock... Laporan segera dikirim!`,
                 parse_mode: "Markdown"
               })
             });

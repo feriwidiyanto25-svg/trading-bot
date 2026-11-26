@@ -12,6 +12,58 @@ from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 def format_telegram_message(data: dict) -> str:
     """Membuat pesan terformat ringkas, padat, dan ramah mobile untuk notifikasi Telegram"""
     now = datetime.datetime.now().strftime("%d %b %Y | %H:%M WIB")
+
+    # A. Format Khusus Cek 1 Koin: Multi-Timeframe (1D ➔ 4H ➔ 15M) Bi-Directional Setups
+    if data.get("is_mtf_check"):
+        sym = data.get("symbol", "PAIR")
+        price = data.get("curr_price_str", "0.0")
+        bias = data.get("bias", {})
+        mtf = data.get("mtf", {})
+        s_long = data.get("setup_long", {})
+        s_short = data.get("setup_short", {})
+        intel = data.get("token_intel", {})
+
+        msg = f"📊 *[ANALISIS MULTI-TIMEFRAME (1D ➔ 4H ➔ 15M): {sym}]*\n"
+        msg += f"💵 Harga Saat Ini: *${price}* | 🕒 {now}\n\n"
+
+        # 1. Bias Kekuatan & Rekomendasi
+        msg += "🎯 *BIAS KEKUATAN & REKOMENDASI:*\n"
+        msg += f"   🟢 Potensi LONG  : *{bias.get('prob_long', 50)}%* `{bias.get('bar', '')}`\n"
+        msg += f"   🔴 Potensi SHORT : *{bias.get('prob_short', 50)}%*\n"
+        msg += f"   💡 *Kesimpulan:* _{bias.get('conclusion', '-')}_\n\n"
+
+        # 2. Peta Besar Pasar
+        msg += "🧭 *PETA STRUKTUR PASAR:*\n"
+        d1 = mtf.get("1d", {})
+        h4 = mtf.get("4h", {})
+        m15 = mtf.get("15m", {})
+        msg += f"• *1D (Harian)*  : {d1.get('trend')} | RSI: `{d1.get('rsi', 50):.1f}` | EMA20: `${d1.get('ema20')}`{d1.get('climax', '')}\n"
+        msg += f"• *4H (4 Jam)*   : {h4.get('trend')} | RSI: `{h4.get('rsi', 50):.1f}` | Supp: `${h4.get('support')}` | Res: `${h4.get('resist')}`\n"
+        msg += f"• *15m (Sniper)* : RSI: `{m15.get('rsi', 50):.1f}` | Titik Pantul: `${m15.get('bounce_point')}` | Risiko: `±{m15.get('risk_pct', 2.5):.1f}%`\n"
+        msg += "━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        # 3. Setup Long
+        msg += "🟢 *SETUP LONG (Skenario Pantulan / Tembus ke Atas):*\n"
+        msg += f"   • *Area Entry*   : `{s_long.get('entry_range')}`\n"
+        msg += f"   • *Stop Loss*    : `{s_long.get('sl')}`\n"
+        msg += f"   • *Take Profit 1*: `{s_long.get('tp1')}` (RR `{s_long.get('rr_tp1')}`)\n"
+        msg += f"   • *Take Profit 2*: `{s_long.get('tp2')}` (RR `{s_long.get('rr_tp2')}`)\n\n"
+
+        # 4. Setup Short
+        msg += "🔴 *SETUP SHORT (Skenario Tertolak / Ambles ke Bawah):*\n"
+        msg += f"   • *Area Entry*   : `{s_short.get('entry_range')}`\n"
+        msg += f"   • *Stop Loss*    : `{s_short.get('sl')}`\n"
+        msg += f"   • *Take Profit 1*: `{s_short.get('tp1')}` (RR `{s_short.get('rr_tp1')}`)\n"
+        msg += f"   • *Take Profit 2*: `{s_short.get('tp2')}` (RR `{s_short.get('rr_tp2')}`)\n\n"
+
+        # 5. Catatan Fundamental & Risiko
+        msg += "━━━━━━━━━━━━━━━━━━━━━\n"
+        msg += "📌 *CATATAN FUNDAMENTAL & RESIKO:*\n"
+        if intel.get("unlock_note"):
+            msg += f"   • {intel.get('unlock_note')}\n"
+        msg += f"   • 🛡️ {intel.get('security_status', 'Status Keamanan: Bersih')}\n"
+        return msg
+
     longs = data.get("longs", [])
     shorts = data.get("shorts", [])
     btc = data.get("btc_status", {})
@@ -109,6 +161,50 @@ def format_telegram_message(data: dict) -> str:
 
 def print_terminal_report(data: dict):
     """Menampilkan hasil pemindaian di Terminal/CMD dengan format tabel rapi dan Intelijen Paus"""
+    if data.get("is_mtf_check"):
+        sym = data.get("symbol", "PAIR")
+        price = data.get("curr_price_str", "0.0")
+        bias = data.get("bias", {})
+        mtf = data.get("mtf", {})
+        s_long = data.get("setup_long", {})
+        s_short = data.get("setup_short", {})
+        intel = data.get("token_intel", {})
+
+        print("\n" + "="*80)
+        print(f"       ANALISIS MULTI-TIMEFRAME (1D ➔ 4H ➔ 15M): {sym}")
+        print(f"       Harga Saat Ini: ${price}")
+        print("="*80)
+        print(f"\n🎯 BIAS KEKUATAN & REKOMENDASI:")
+        print(f"   🟢 Potensi LONG  : {bias.get('prob_long', 50)}% {bias.get('bar', '')}")
+        print(f"   🔴 Potensi SHORT : {bias.get('prob_short', 50)}%")
+        print(f"   💡 Kesimpulan    : {bias.get('conclusion', '-')}")
+        print("\n🧭 PETA STRUKTUR PASAR:")
+        d1 = mtf.get("1d", {})
+        h4 = mtf.get("4h", {})
+        m15 = mtf.get("15m", {})
+        print(f"• 1D (Harian)  : {d1.get('trend')} | RSI: {d1.get('rsi', 50):.1f} | EMA20: ${d1.get('ema20')}{d1.get('climax', '')}")
+        print(f"• 4H (4 Jam)   : {h4.get('trend')} | RSI: {h4.get('rsi', 50):.1f} | Supp: ${h4.get('support')} | Res: ${h4.get('resist')}")
+        print(f"• 15m (Sniper) : RSI: {m15.get('rsi', 50):.1f} | Titik Pantul: ${m15.get('bounce_point')} | Jarak Risiko: ±{m15.get('risk_pct', 2.5):.1f}%")
+        print("\n" + "-"*80)
+        print("🟢 SETUP LONG (Skenario Pantulan / Tembus ke Atas):")
+        print(f"   • Area Entry   : {s_long.get('entry_range')}")
+        print(f"   • Stop Loss    : {s_long.get('sl')}")
+        print(f"   • Take Profit 1: {s_long.get('tp1')} (RR {s_long.get('rr_tp1')})")
+        print(f"   • Take Profit 2: {s_long.get('tp2')} (RR {s_long.get('rr_tp2')})")
+        print("\n" + "-"*80)
+        print("🔴 SETUP SHORT (Skenario Tertolak / Ambles ke Bawah):")
+        print(f"   • Area Entry   : {s_short.get('entry_range')}")
+        print(f"   • Stop Loss    : {s_short.get('sl')}")
+        print(f"   • Take Profit 1: {s_short.get('tp1')} (RR {s_short.get('rr_tp1')})")
+        print(f"   • Take Profit 2: {s_short.get('tp2')} (RR {s_short.get('rr_tp2')})")
+        print("\n" + "-"*80)
+        print("📌 CATATAN FUNDAMENTAL & RESIKO:")
+        if intel.get("unlock_note"):
+            print(f"   • {intel.get('unlock_note')}")
+        print(f"   • 🛡️ {intel.get('security_status', 'Status Keamanan: Bersih')}")
+        print("="*80 + "\n")
+        return
+
     btc = data.get("btc_status", {})
     fg = data.get("fear_greed", {})
     macro = data.get("macro_intel", {})

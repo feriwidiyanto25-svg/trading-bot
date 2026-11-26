@@ -88,11 +88,11 @@ def process_single_coin_request(chat_id: str, symbol: str, timeframe: str = "15m
     if not sym.endswith("USDT"):
         sym += "USDT"
 
-    send_chat_message(chat_id, f"🔍 *Menganalisis koin {sym} (Timeframe {timeframe})...*\n_Mohon tunggu sebentar..._")
-    print(f"\n[+] Permintaan analisis khusus {sym} (TF: {timeframe}) diterima...")
+    send_chat_message(chat_id, f"🔍 *Menganalisis koin {sym} (Triple Screen 1D ➔ 4H ➔ 15M)...*\n_Menghitung probabilitas arah, Setup Long, Setup Short, & cek Unlock..._")
+    print(f"\n[+] Permintaan analisis khusus {sym} (Triple Screen MTF) diterima...")
     data = analyze_specific_coin(symbol=sym, timeframe=timeframe)
-    if not data or not (data.get("longs") or data.get("shorts")):
-        send_chat_message(chat_id, f"⚠️ *Koin '{sym}' tidak ditemukan di Binance Vision atau skor saat ini netral.*")
+    if not data or (not data.get("is_mtf_check") and not (data.get("longs") or data.get("shorts"))):
+        send_chat_message(chat_id, f"⚠️ *Koin '{sym}' tidak ditemukan di Binance atau datanya tidak mencukupi.*")
         return
 
     msg = format_telegram_message(data)

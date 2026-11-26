@@ -10,7 +10,7 @@ from reporter import print_terminal_report, format_telegram_message, send_telegr
 def scan_once(timeframe: str = "4h", enable_telegram: bool = False, symbol: str = "", mode: str = "trend"):
     mode_desc = "Mode 2: Radar Pre-Pump / Whale Hunter" if mode == "pump" else "Mode 1: Trend Konservatif"
     if symbol:
-        print(f"\n[+] Memulai analisis koin khusus: {symbol.upper()} (Timeframe: {timeframe} | {mode_desc})...")
+        print(f"\n[+] Memulai analisis koin khusus: {symbol.upper()} (Triple Screen 1D ➔ 4H ➔ 15M)...")
         data = analyze_specific_coin(symbol=symbol, timeframe=timeframe, mode=mode)
         if not data:
             print(f"[!] Koin '{symbol}' tidak ditemukan atau datanya tidak mencukupi.")
