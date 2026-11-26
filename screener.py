@@ -648,12 +648,30 @@ def run_market_screener(timeframe: str = TIMEFRAME, mode: str = "trend") -> Dict
         top_shorts.sort(key=lambda x: x["score"])
         top_shorts = top_shorts[:2]
 
+    # Jalankan Triple Screen Multi-Timeframe (1D ➔ 4H ➔ 15M) Bi-Directional
+    # untuk koin-koin terbaik yang disaring oleh pasar
+    candidates = []
+    seen = set()
+    for r in (top_longs + top_shorts):
+        sym = r.get("symbol")
+        if sym and sym not in seen:
+            seen.add(sym)
+            candidates.append(sym)
+
+    coins_mtf = []
+    for sym in candidates[:3]:
+        mtf_data = analyze_specific_coin(symbol=sym, timeframe=timeframe, mode=mode)
+        if mtf_data and mtf_data.get("is_mtf_check"):
+            coins_mtf.append(mtf_data)
+
     return {
+        "is_market_scan": True,
         "timeframe": timeframe,
         "mode": mode,
         "btc_status": btc_status,
         "fear_greed": fear_greed,
         "macro_intel": macro_intel,
+        "coins_analyzed": coins_mtf,
         "longs": top_longs,
         "shorts": top_shorts,
         "total_scanned": len(results)
