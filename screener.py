@@ -761,41 +761,49 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "
     vol_ratio_15m = float(last_15m['volume'] / df_15m['volume'].tail(10).mean()) if df_15m['volume'].tail(10).mean() > 0 else 1.0
     is_green_15m = last_15m['close'] >= last_15m['open']
 
-    # 5. Hitung Probabilitas Kekuatan (Bias Long vs Short)
+    # 5. Hitung Probabilitas Kekuatan & Deteksi Tipe Setup (Anti-Shorting the Bottom)
     long_pts = 0
     short_pts = 0
 
-    if trend_1d_bull:
-        long_pts += 15
-    else:
-        short_pts += 15
-    if rsi_1d < 25:
-        long_pts += 12
-    elif rsi_1d > 75:
-        short_pts += 12
+    dist_ema20_1d = ((curr_price - ema20_1d) / ema20_1d * 100) if ema20_1d > 0 else 0
+    is_extreme_oversold = (rsi_1d < 25 or rsi_4h < 22 or dist_ema20_1d <= -20)
+    is_extreme_overbought = (rsi_1d > 75 or rsi_4h > 78)
 
-    if trend_4h_bull:
-        long_pts += 15
+    if is_extreme_oversold:
+        setup_type = "🩸 Pantulan Jenuh Jual (Rebound)"
+        long_pts += 30   # Dorongan kuat pantulan elastis
+        short_pts -= 15  # Penalti keras agar tidak short di dasar!
+    elif is_extreme_overbought:
+        setup_type = "⚠️ Pucuk Jenuh Beli (Koreksi)"
+        short_pts += 30
+        long_pts -= 15
     else:
-        short_pts += 15
-    if rsi_4h < 25:
-        long_pts += 10
-    elif rsi_4h > 75:
-        short_pts += 10
+        if trend_1d_bull:
+            setup_type = "🌊 Mengikuti Tren (Trend Following)"
+            long_pts += 15
+        else:
+            setup_type = "📉 Tren Menurun"
+            short_pts += 15
 
+        if trend_4h_bull:
+            long_pts += 15
+        else:
+            short_pts += 15
+
+    # Validasi Reaksi Lilin 15m
     if wick_bwh_pct >= 45:
         long_pts += 15
     elif wick_atas_pct >= 45:
         short_pts += 15
 
-    if vol_ratio_15m >= 1.5:
+    if vol_ratio_15m >= 1.4:
         if is_green_15m:
             long_pts += 10
         else:
             short_pts += 10
 
     diff = long_pts - short_pts
-    shift = max(min(diff, 35), -35)
+    shift = max(min(diff, 30), -30)
     prob_long = int(50 + shift)
     prob_short = 100 - prob_long
 
@@ -805,11 +813,11 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "
     bar_str = ("🟩" * green_blocks) + ("⬜" * white_blocks)
 
     if prob_long >= 55:
-        conclusion = "Peluang lebih condong ke LONG (Pantulan Jenuh Jual / Momentum Beli)"
+        conclusion = "Peluang lebih condong ke LONG"
     elif prob_short >= 55:
-        conclusion = "Peluang lebih condong ke SHORT (Tekanan Jual / Penolakan Resistensi)"
+        conclusion = "Peluang lebih condong ke SHORT"
     else:
-        conclusion = "Kekuatan Seimbang 50-50 (Pasar Sideways / Menunggu Konfirmasi Breakout)"
+        conclusion = "Kekuatan Seimbang 50-50"
 
     # Helper format price
     def _fmt(val: float) -> str:
@@ -855,6 +863,7 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "
         "fear_greed": fear_greed,
         "macro_intel": macro_intel,
         "bias": {
+            "setup_type": setup_type,
             "prob_long": prob_long,
             "prob_short": prob_short,
             "bar": bar_str,
