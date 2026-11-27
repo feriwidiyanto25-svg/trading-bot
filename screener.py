@@ -234,10 +234,21 @@ def analyze_single_coin(coin_meta: Dict[str, Any], btc_status: Dict[str, Any] = 
     # Deteksi Pre-Pump / Whale Hunter jika Mode Pump aktif
     pump_eval = None
     if mode == "pump":
-        df_daily = get_klines_data(symbol, interval="1d", limit=30)
+        df_daily = get_klines_data(symbol, interval="1d", limit=90)
+        if not df_daily.empty and len(df_daily) >= 30:
+            curr_d = float(df_daily['close'].iloc[-1])
+            chg_7d = ((curr_d / float(df_daily['close'].iloc[-7])) - 1) * 100
+            chg_30d = ((curr_d / float(df_daily['close'].iloc[-30])) - 1) * 100
+            hi_90 = float(df_daily['high'].max())
+            lo_90 = float(df_daily['low'].min())
+            pos_90 = ((curr_d - lo_90) / (hi_90 - lo_90)) if hi_90 > lo_90 else 0.5
+            # Tolak koin yang sudah tinggi di mingguan/bulanan atau sudah dekat pucuk 90 hari
+            if chg_7d > 15.0 or chg_30d > 25.0 or pos_90 > 0.78:
+                return None
+
         df_15m = df if timeframe == "15m" else get_klines_data(symbol, interval="15m", limit=30)
         if not df_15m.empty:
-            pump_eval = detect_whale_accumulation_and_breakout(df_15m, df_daily=df_daily if not df_daily.empty else None)
+            pump_eval = detect_whale_accumulation_and_breakout(df_15m, df_daily=df_daily.tail(30) if not df_daily.empty else None)
 
     # 1. Kalkulasi Indikator Dasar & Lanjutan
     df['ema_200'] = calculate_ema(df['close'], period=min(200, len(df)))
