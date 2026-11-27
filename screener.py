@@ -741,6 +741,10 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "
     if atr_15m <= 0:
         atr_15m = curr_price * 0.015
 
+    atr_4h = float(df_4h['atr'].iloc[-1]) if (not df_4h.empty and 'atr' in df_4h.columns and pd.notna(df_4h['atr'].iloc[-1])) else curr_price * 0.025
+    if atr_4h <= 0:
+        atr_4h = curr_price * 0.025
+
     # 2. Rangkuman 1D (Harian)
     if not df_1d.empty and len(df_1d) >= 14:
         close_1d = float(df_1d['close'].iloc[-1])
@@ -856,6 +860,11 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "
         elif val < 10.0: return f"{val:.4f}".rstrip("0").rstrip(".")
         else: return f"{val:.2f}"
 
+    # Buffer SL berbasis volatilitas 15m & 4H agar tidak mudah tersapu wick
+    sl_buffer = max(1.0 * atr_15m, 0.35 * atr_4h)
+    is_major_coin = clean_sym in {"BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"}
+    min_risk_ratio = (MIN_RISK_PCT_MAJORS if is_major_coin else MIN_RISK_PCT_ALTCOIN) / 100.0
+
     # 6. SETUP LONG BERBASIS SUPPORT & PULLBACK
     key_supp_long = swing_low_4h if swing_low_4h > 0 else (curr_price * 0.95)
     if curr_price < key_supp_long:
@@ -867,19 +876,20 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "
         long_status = f"✅ Dekat Support (${_fmt(key_supp_long)})"
         long_entry_low = max(key_supp_long, curr_price - (0.5 * atr_15m))
         long_entry_high = curr_price + (0.2 * atr_15m)
-        long_sl = key_supp_long - (0.3 * atr_15m)
+        long_sl = key_supp_long - sl_buffer
     else:
         long_status = f"⚠️ Tunggu Koreksi (+{dist_supp_pct:.1f}% dr Supp ${_fmt(key_supp_long)})"
         move_up = curr_price - key_supp_long
         long_entry_low = key_supp_long + (0.15 * move_up)
         long_entry_high = key_supp_long + (0.50 * move_up)
-        long_sl = key_supp_long - (0.25 * atr_15m)
+        long_sl = key_supp_long - sl_buffer
 
     long_mid_entry = (long_entry_low + long_entry_high) / 2
-    long_risk = max(long_mid_entry - long_sl, long_mid_entry * 0.015)
+    long_risk = max(long_mid_entry - long_sl, long_mid_entry * min_risk_ratio)
+    long_sl = long_mid_entry - long_risk  # Pastikan harga SL sinkron dengan jarak risiko minimal
     long_risk_pct = (long_risk / long_mid_entry) * 100
-    long_tp1 = long_mid_entry + (1.5 * long_risk)
-    long_tp2 = max(swing_high_4h, long_mid_entry + (2.5 * long_risk))
+    long_tp1 = long_mid_entry + (RRR_TP1 * long_risk)
+    long_tp2 = max(swing_high_4h, long_mid_entry + (RRR_TP2 * long_risk))
 
     # 7. SETUP SHORT BERBASIS RESISTENSI & PULLBACK
     key_res_short = swing_high_4h if swing_high_4h > 0 else (curr_price * 1.05)
@@ -892,19 +902,20 @@ def analyze_specific_coin(symbol: str, timeframe: str = TIMEFRAME, mode: str = "
         short_status = f"✅ Dekat Resistensi (${_fmt(key_res_short)})"
         short_entry_low = curr_price - (0.2 * atr_15m)
         short_entry_high = min(key_res_short, curr_price + (0.5 * atr_15m))
-        short_sl = key_res_short + (0.3 * atr_15m)
+        short_sl = key_res_short + sl_buffer
     else:
         short_status = f"⚠️ Tunggu Pantulan (-{dist_res_pct:.1f}% dr Res ${_fmt(key_res_short)})"
         move_down = key_res_short - curr_price
         short_entry_low = key_res_short - (0.50 * move_down)
         short_entry_high = key_res_short - (0.15 * move_down)
-        short_sl = key_res_short + (0.25 * atr_15m)
+        short_sl = key_res_short + sl_buffer
 
     short_mid_entry = (short_entry_low + short_entry_high) / 2
-    short_risk = max(short_sl - short_mid_entry, short_mid_entry * 0.015)
+    short_risk = max(short_sl - short_mid_entry, short_mid_entry * min_risk_ratio)
+    short_sl = short_mid_entry + short_risk  # Pastikan harga SL sinkron dengan jarak risiko minimal
     short_risk_pct = (short_risk / short_mid_entry) * 100
-    short_tp1 = short_mid_entry - (1.5 * short_risk)
-    short_tp2 = min(swing_low_4h, short_mid_entry - (2.5 * short_risk))
+    short_tp1 = short_mid_entry - (RRR_TP1 * short_risk)
+    short_tp2 = min(swing_low_4h, short_mid_entry - (RRR_TP2 * short_risk))
 
     # 8. Token Intel
     token_intel = get_token_fundamental_intel(clean_sym)
